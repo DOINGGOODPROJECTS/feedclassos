@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getSupervisorOverview, getValidationLogs, getSchools } from "@/lib/mockApi";
-import { ValidationLog, School } from "@/lib/types";
+import { getSupervisorOverview, getValidationLogs, getSchools, getProblemsForSchool } from "@/lib/mockApi";
+import { Child, ValidationLog, School } from "@/lib/types";
 import { useAppStore } from "@/lib/store";
 import { PageHeader } from "@/components/page-header";
 import { StatCards } from "@/components/stat-cards";
@@ -14,11 +14,13 @@ export default function SupervisorHomePage() {
   const [overview, setOverview] = useState<Awaited<ReturnType<typeof getSupervisorOverview>> | null>(null);
   const [logs, setLogs] = useState<ValidationLog[]>([]);
   const [school, setSchool] = useState<School | null>(null);
+  const [problems, setProblems] = useState<Array<{ child: Child; reason: string }>>([]);
 
   useEffect(() => {
     getSupervisorOverview(schoolId).then(setOverview);
     getValidationLogs().then(setLogs);
     getSchools().then((data) => setSchool(data.find((entry) => entry.id === schoolId) ?? null));
+    getProblemsForSchool(schoolId).then((data) => setProblems(data as Array<{ child: Child; reason: string }>));
   }, [schoolId]);
 
   const failedLogs = logs.filter((log) => log.result === "FAILED").slice(0, 4);
@@ -26,7 +28,7 @@ export default function SupervisorHomePage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Supervisor Home"
+        title="School Admin · Home"
         description={school ? `Daily ops dashboard · ${school.name}` : "Loading school"}
       />
 
@@ -34,7 +36,7 @@ export default function SupervisorHomePage() {
         <StatCards
           items={[
             { label: "Meals served today", value: overview.todayMeals.toString(), helper: "Live" },
-            { label: "Open problems", value: overview.problems.length.toString(), helper: "Needs attention" },
+            { label: "Open problems", value: problems.length.toString(), helper: "Needs attention" },
           ]}
         />
       )}
@@ -77,7 +79,7 @@ export default function SupervisorHomePage() {
           <CardTitle>Open problems</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          {overview?.problems.map((entry) => (
+          {problems.map((entry) => (
             <div key={entry.child.id} className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3">
               <span className="text-sm text-slate-700">{entry.child.full_name}</span>
               <Badge variant="danger">{entry.reason}</Badge>

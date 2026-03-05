@@ -58,7 +58,7 @@ export default function AdminSuppliersPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Suppliers"
+        title="Program Admin · Suppliers"
         description="Supplier registry supporting cost-per-meal analytics."
         actions={
           <Dialog

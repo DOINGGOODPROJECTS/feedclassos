@@ -7,6 +7,7 @@ const navItems = [
   { label: "Overview", href: "#platform" },
   { label: "Services", href: "#services" },
   { label: "Functionality", href: "#functionality" },
+  { label: "Blockchain", href: "#blockchain" },
   { label: "Key Users", href: "#users" },
 ];
 
@@ -35,7 +36,7 @@ export default function Home() {
           </nav>
           <div className="flex items-center gap-3">
             <Link
-              href="http://localhost:3001/app"
+              href="/app"
               className="hidden items-center justify-center rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white md:inline-flex"
             >
               Launch App
@@ -65,7 +66,7 @@ export default function Home() {
                 </Link>
               ))}
               <Link
-                href="http://localhost:3001/app"
+                href="/app"
                 className="inline-flex items-center justify-center rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
               >
                 Launch App
@@ -101,7 +102,7 @@ export default function Home() {
               </p>
               <div className="flex flex-wrap items-center gap-3">
                 <Link
-                  href="http://localhost:3001/app"
+                  href="/app"
                   className="inline-flex items-center justify-center rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white"
                 >
                   Launch FeedClass App
@@ -284,6 +285,31 @@ export default function Home() {
                       className="h-[360px] w-full object-cover md:h-[420px]"
                     />
                   </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="blockchain" className="scroll-mt-24 relative left-1/2 w-screen -translate-x-1/2">
+          <div className="w-full bg-white py-12">
+            <div className="mx-auto w-full max-w-none px-0">
+              <div className="grid gap-8 px-6 lg:grid-cols-2 lg:items-center lg:px-16">
+                <div className="order-2 lg:order-1">
+                  <div className="overflow-hidden rounded-[28px] border border-amber-100 shadow-sm">
+                    <img src="/blockchain.png" alt="Blockchain verification" className="h-full w-full object-cover" />
+                  </div>
+                </div>
+                <div className="order-1 space-y-4 lg:order-2">
+                  <h2 className="text-2xl font-semibold text-slate-900">Blockchain Impact Verification</h2>
+                  <p className="text-sm text-slate-600">
+                    FeedClass includes a blockchain verification layer built on CELO, a mobile-first network
+                    designed for emerging markets. Each day, meal service records are aggregated and anchored
+                    to the blockchain as Merkle-root cryptographic hashes. These records contain no personally
+                    identifiable information, but create tamper-proof, independently auditable proof that meals
+                    were served at specific schools on specific dates, enabling transparent impact verification
+                    for donors and partners.
+                  </p>
                 </div>
               </div>
             </div>

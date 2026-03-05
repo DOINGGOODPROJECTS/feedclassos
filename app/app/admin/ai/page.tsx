@@ -22,7 +22,7 @@ export default function AdminAiPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="AI Insights"
+        title="Program Admin · AI Insights"
         description="Forecasts, anomaly alerts, and executive summary placeholders (mocked)."
       />
 

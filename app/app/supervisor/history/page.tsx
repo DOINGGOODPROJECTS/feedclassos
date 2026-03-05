@@ -26,7 +26,7 @@ export default function SupervisorHistoryPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Meal History"
+        title="School Admin · Meal History"
         description="Review served meals by date with quick filters."
       />
 

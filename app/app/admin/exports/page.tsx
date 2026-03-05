@@ -30,7 +30,7 @@ export default function AdminExportsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Exports"
+        title="Program Admin · Exports"
         description="Monthly export placeholders for finance and reporting."
       />
 

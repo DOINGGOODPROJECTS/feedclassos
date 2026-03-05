@@ -69,7 +69,7 @@ export default function AdminChildrenPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Children"
+        title="Program Admin · Children"
         description="Student registry plus CSV import flow with validation and reject reporting."
       />
 
@@ -121,6 +121,11 @@ export default function AdminChildrenPage() {
                     header: "Guardian phone",
                     render: (row: Child) =>
                       guardians.find((guardian) => guardian.id === row.guardian_id)?.phone ?? "-",
+                  },
+                  {
+                    header: "Guardian name",
+                    render: (row: Child) =>
+                      guardians.find((guardian) => guardian.id === row.guardian_id)?.name ?? "-",
                   },
                   {
                     header: "Status",

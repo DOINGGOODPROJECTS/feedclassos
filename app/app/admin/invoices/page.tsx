@@ -30,7 +30,7 @@ export default function AdminInvoicesPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Supplier Invoices"
+        title="Program Admin · Supplier Invoices"
         description="Track monthly supplier invoices and cost per meal signals."
       />
 

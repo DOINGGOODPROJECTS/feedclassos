@@ -19,7 +19,7 @@ export default function SupervisorProblemsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Problems"
+        title="School Admin · Problems"
         description="Scan failures and blockers that need attention."
       />
 

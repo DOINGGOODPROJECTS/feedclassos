@@ -32,7 +32,7 @@ export default function SupervisorScanPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Scan meals"
+        title="School Admin · Scan meals"
         description="QR validation with fast success/fail feedback and manual entry fallback."
       />
 

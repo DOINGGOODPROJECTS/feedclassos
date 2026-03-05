@@ -32,7 +32,7 @@ export default function AdminLedgerPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Ledger"
+        title="Program Admin · Ledger"
         description="Append-only transactions with filters and export-ready views."
       />
 

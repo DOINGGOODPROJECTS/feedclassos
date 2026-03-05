@@ -69,7 +69,7 @@ export default function AdminPlansPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Subscription Plans"
+        title="Program Admin · Subscription Plans"
         description="Configure pricing, meal counts, and plan availability."
         actions={
           <Dialog

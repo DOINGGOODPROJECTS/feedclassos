@@ -42,7 +42,7 @@ export default function AdminBadgesPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Badges"
+        title="Program Admin · Badges"
         description="QR preview and badge printing for classes (A4/card layouts)."
       />
 

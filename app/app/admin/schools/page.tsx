@@ -75,7 +75,7 @@ export default function AdminSchoolsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Schools"
+        title="Program Admin · Schools"
         description="Registry of participating schools, locations, and contacts."
         actions={
           <Dialog

@@ -71,7 +71,7 @@ export default function AdminClassesPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Classes"
+        title="Program Admin · Classes"
         description="Organize homerooms by grade and link them to schools."
         actions={
           <Dialog

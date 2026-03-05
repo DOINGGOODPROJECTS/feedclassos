@@ -28,10 +28,24 @@ export function Navbar() {
   }, []);
 
   const supervisorSchool = schools.find((school) => school.id === supervisorSchoolId);
+  const roleLabels: Record<"ADMIN" | "SUPERVISOR" | "DONOR_READONLY", string> = {
+    ADMIN: "Program Admin",
+    SUPERVISOR: "School Admin",
+    DONOR_READONLY: "Donor",
+  };
+
+  useEffect(() => {
+    document.cookie = `fc_role=${role}; path=/; max-age=31536000`;
+  }, [role]);
+
+  const handleRoleChange = (nextRole: "ADMIN" | "SUPERVISOR" | "DONOR_READONLY") => {
+    setRole(nextRole);
+    document.cookie = `fc_role=${nextRole}; path=/; max-age=31536000`;
+  };
 
   return (
     <header className="border-b border-slate-200/60 bg-white/80 backdrop-blur">
-      <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-6 py-4">
+      <div className="flex w-full max-w-none items-center justify-between gap-4 px-6 py-4">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-900 text-white">
             FC
@@ -45,6 +59,9 @@ export function Navbar() {
         </div>
 
         <div className="flex items-center gap-3">
+          <Button asChild variant="ghost" className="hidden md:inline-flex">
+            <Link href="/">Back to Frontpage</Link>
+          </Button>
           {role === "ADMIN" && (
             <div className="hidden items-center gap-2 md:flex">
               <span className="text-xs uppercase text-slate-400">School Context</span>
@@ -70,14 +87,14 @@ export function Navbar() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" className="gap-2">
-                Role: {role.replace("_", " ")}
+                Role: {roleLabels[role]}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setRole("ADMIN")}>ADMIN</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setRole("SUPERVISOR")}>SUPERVISOR</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setRole("DONOR_READONLY")}>
-                DONOR_READONLY
+              <DropdownMenuItem onClick={() => handleRoleChange("ADMIN")}>Program Admin</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleRoleChange("SUPERVISOR")}>School Admin</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleRoleChange("DONOR_READONLY")}>
+                Donor
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

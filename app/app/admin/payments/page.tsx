@@ -33,7 +33,7 @@ export default function AdminPaymentsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Payments"
+        title="Program Admin · Payments"
         description="Payment intents, status tracking, and webhook simulation."
       />
 

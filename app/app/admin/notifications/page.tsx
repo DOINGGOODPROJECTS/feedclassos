@@ -30,7 +30,7 @@ export default function AdminNotificationsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Notifications"
+        title="Program Admin · Notifications"
         description="Message health, delivery logs, and resend controls (mocked)."
         actions={
           <Button variant="outline" onClick={handleResend}>
