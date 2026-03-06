@@ -11,7 +11,7 @@ export default function AppRootRedirect() {
   useEffect(() => {
     const role = getCookieValue("fc_role");
 
-    if (role === "SUPERVISOR") {
+    if (role === "SCHOOL_ADMIN") {
       window.location.replace("/app/supervisor/home");
       return;
     }

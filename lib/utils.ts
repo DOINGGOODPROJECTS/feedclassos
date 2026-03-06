@@ -36,3 +36,9 @@ export function todayISO() {
   const now = new Date();
   return now.toISOString().slice(0, 10);
 }
+
+export function shortenHash(value: string, start = 10, end = 8) {
+  if (!value) return "";
+  if (value.length <= start + end + 3) return value;
+  return `${value.slice(0, start)}...${value.slice(-end)}`;
+}

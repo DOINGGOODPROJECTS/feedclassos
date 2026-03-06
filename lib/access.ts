@@ -5,7 +5,7 @@ export function hasRouteAccess(role: Role, pathname: string) {
     return role === "ADMIN";
   }
   if (pathname.startsWith("/app/supervisor")) {
-    return role === "SUPERVISOR";
+    return role === "SCHOOL_ADMIN";
   }
   if (pathname.startsWith("/app/donor")) {
     return role === "DONOR_READONLY";

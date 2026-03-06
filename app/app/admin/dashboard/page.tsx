@@ -35,9 +35,15 @@ export default function AdminDashboardPage() {
         <StatCards
           items={[
             { label: "Meals Today", value: kpis.mealsToday.toString(), helper: "Live service counts" },
+            {
+              label: "Grace Meals Today",
+              value: kpis.graceMealsToday.toString(),
+              helper: "7-day free window",
+            },
             { label: "Meals This Month", value: kpis.mealsMonth.toString(), helper: "Rolling 30 days" },
             { label: "Active Subscriptions", value: kpis.activeSubscriptions.toString(), helper: "Current cycle" },
             { label: "Expiring Soon", value: kpis.expiringSoon.toString(), helper: "Next 10 days" },
+            { label: "Children on Grace", value: kpis.graceActive.toString(), helper: "Within 7 days" },
             {
               label: "Revenue (Month)",
               value: formatCurrency(kpis.revenueMonth),

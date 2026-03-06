@@ -2,27 +2,32 @@ import {
   ActivityLog,
   AiReport,
   AnomalyAlert,
+  BlockchainAnchor,
   Child,
-  ChildQr,
-  ChildSubscription,
   ClassRoom,
   MealServe,
-  MessageLog,
   MessageOutbox,
-  PaymentEvent,
   PaymentIntent,
   ReasonCode,
   School,
   SubscriptionPlan,
   Supplier,
-  SupplierInvoice,
-  Transaction,
   ValidationLog,
+  GracePeriod,
+  SchoolStaff,
+  SchoolStaffRole,
+  SupervisorChildLookupItem,
 } from "./types";
+import {
+  buildAnchorHashes,
+  getFinancingTotalForDate,
+  getSupplierCostTotalForDate,
+} from "./blockchain";
 import {
   activity_logs,
   ai_reports,
   anomaly_alerts,
+  blockchain_anchors,
   child_qr,
   child_subscriptions,
   children,
@@ -32,6 +37,7 @@ import {
   payment_events,
   payment_intents,
   schools,
+  school_staff,
   subscription_plans,
   supplier_invoices,
   suppliers,
@@ -39,6 +45,7 @@ import {
   validation_logs,
   meal_serves,
   guardians,
+  grace_periods,
 } from "./mockData";
 import { todayISO } from "./utils";
 
@@ -51,6 +58,46 @@ const uid = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2,
 export async function getSchools() {
   await wait(latency());
   return [...schools];
+}
+
+export async function getSchoolStaff(schoolId: string): Promise<SchoolStaff[]> {
+  await wait(latency());
+  return school_staff.filter((entry) => entry.school_id === schoolId);
+}
+
+export async function createSchoolStaff(input: {
+  school_id: string;
+  name: string;
+  email: string;
+  role: SchoolStaffRole;
+}) {
+  await wait(latency());
+  const staff: SchoolStaff = {
+    id: uid("st"),
+    school_id: input.school_id,
+    name: input.name,
+    email: input.email,
+    role: input.role,
+    access_active: true,
+  };
+  school_staff.push(staff);
+  return staff;
+}
+
+export async function removeSchoolStaff(staffId: string) {
+  await wait(latency());
+  const index = school_staff.findIndex((entry) => entry.id === staffId);
+  if (index === -1) return false;
+  school_staff.splice(index, 1);
+  return true;
+}
+
+export async function toggleSchoolStaffAccess(staffId: string) {
+  await wait(latency());
+  const staff = school_staff.find((entry) => entry.id === staffId);
+  if (!staff) return null;
+  staff.access_active = !staff.access_active;
+  return staff;
 }
 
 export async function createSchool(input: Omit<School, "id">) {
@@ -330,6 +377,9 @@ export async function getAiReports(): Promise<{ alerts: AnomalyAlert[]; reports:
 export async function getDashboardKpis() {
   await wait(latency());
   const mealsToday = meal_serves.filter((serve) => serve.serve_date === todayISO()).length;
+  const graceMealsToday = meal_serves.filter(
+    (serve) => serve.serve_date === todayISO() && serve.is_grace
+  ).length;
   const mealsMonth = meal_serves.length;
   const activeSubscriptions = child_subscriptions.filter((sub) => sub.status === "ACTIVE").length;
   const expiringSoon = child_subscriptions.filter((sub) => sub.status === "ACTIVE").length;
@@ -339,11 +389,19 @@ export async function getDashboardKpis() {
   const supplierCostMonth = supplier_invoices.reduce((sum, inv) => sum + inv.amount, 0);
   const costPerMeal = supplierCostMonth / Math.max(meal_serves.length, 1);
 
+  const graceActive = grace_periods.filter((entry) => {
+    const start = new Date(entry.start_date);
+    const diffDays = Math.floor((new Date(todayISO()).getTime() - start.getTime()) / 86400000);
+    return diffDays >= 0 && diffDays < 7 && entry.days_used < 7;
+  }).length;
+
   return {
     mealsToday,
     mealsMonth,
     activeSubscriptions,
     expiringSoon,
+    graceMealsToday,
+    graceActive,
     revenueMonth,
     supplierCostMonth,
     costPerMeal,
@@ -358,7 +416,15 @@ export async function getDonorKpis() {
     .filter((tx) => tx.type === "SUBSCRIPTION_PURCHASE")
     .reduce((sum, tx) => sum + tx.amount, 0);
   const costPerMeal = supplier_invoices.reduce((sum, inv) => sum + inv.amount, 0) / Math.max(totalMeals, 1);
-  return { totalMeals, totalChildren, fundsReceived, costPerMeal };
+  const anchors = await getBlockchainAnchors();
+  return {
+    totalMeals,
+    totalChildren,
+    fundsReceived,
+    costPerMeal,
+    anchoredDays: anchors.length,
+    latestAnchor: anchors[0] ?? null,
+  };
 }
 
 export async function getSupervisorOverview(schoolId: string) {
@@ -381,6 +447,97 @@ export async function getSupervisorOverview(schoolId: string) {
   });
 
   return { todayMeals: todayMeals.length, byClass, problems };
+}
+
+async function buildAnchorForDate(anchorDate: string): Promise<BlockchainAnchor | null> {
+  const meals = meal_serves.filter((entry) => entry.serve_date === anchorDate);
+  if (meals.length === 0) return null;
+
+  const { merkleRoot, celoTxHash } = await buildAnchorHashes(meals, anchorDate);
+  return {
+    id: uid("ba"),
+    anchor_date: anchorDate,
+    meal_count: meals.length,
+    school_ids: Array.from(new Set(meals.map((entry) => entry.school_id))),
+    merkle_root: merkleRoot,
+    celo_tx_hash: celoTxHash,
+    celo_block_number: 31250000 + blockchain_anchors.length * 19 + meals.length,
+    financing_total: getFinancingTotalForDate(anchorDate, transactions),
+    supplier_cost_total: getSupplierCostTotalForDate(anchorDate, supplier_invoices),
+    status: "ANCHORED",
+    created_at: new Date(`${anchorDate}T23:59:59Z`).toISOString(),
+  };
+}
+
+async function ensureBlockchainAnchors() {
+  const anchoredDates = new Set(blockchain_anchors.map((entry) => entry.anchor_date));
+  const servedDates = Array.from(new Set(meal_serves.map((entry) => entry.serve_date))).sort().reverse();
+  for (const anchorDate of servedDates) {
+    if (anchoredDates.has(anchorDate)) continue;
+    const anchor = await buildAnchorForDate(anchorDate);
+    if (anchor) {
+      blockchain_anchors.push(anchor);
+      anchoredDates.add(anchorDate);
+    }
+  }
+  blockchain_anchors.sort((left, right) => right.anchor_date.localeCompare(left.anchor_date));
+}
+
+export async function getBlockchainAnchors() {
+  await wait(latency());
+  await ensureBlockchainAnchors();
+  return [...blockchain_anchors];
+}
+
+export async function anchorMealsToBlockchain(anchorDate: string) {
+  await wait(latency());
+  await ensureBlockchainAnchors();
+  const existing = blockchain_anchors.find((entry) => entry.anchor_date === anchorDate);
+  if (existing) return existing;
+  const anchor = await buildAnchorForDate(anchorDate);
+  if (!anchor) return null;
+  blockchain_anchors.unshift(anchor);
+  blockchain_anchors.sort((left, right) => right.anchor_date.localeCompare(left.anchor_date));
+  return anchor;
+}
+
+export async function getBlockchainOverview() {
+  await wait(latency());
+  const anchors = await getBlockchainAnchors();
+  const anchoredMeals = anchors.reduce((sum, entry) => sum + entry.meal_count, 0);
+  const mealDates = Array.from(new Set(meal_serves.map((entry) => entry.serve_date)));
+  const anchoredDates = new Set(anchors.map((entry) => entry.anchor_date));
+  const anchoredCoverage =
+    mealDates.length === 0 ? 0 : Math.round((Array.from(anchoredDates).length / mealDates.length) * 100);
+  const financingTotal = anchors.reduce((sum, entry) => sum + entry.financing_total, 0);
+  const supplierCostTotal = anchors.reduce((sum, entry) => sum + entry.supplier_cost_total, 0);
+
+  return {
+    anchors,
+    anchoredMeals,
+    anchoredDays: anchors.length,
+    anchoredCoverage,
+    financingTotal,
+    supplierCostTotal,
+    latestAnchor: anchors[0] ?? null,
+  };
+}
+
+export async function getSupervisorChildrenLookup(schoolId: string): Promise<SupervisorChildLookupItem[]> {
+  await wait(latency());
+  return children
+    .filter((child) => child.school_id === schoolId)
+    .map((child) => {
+      const classRoom = classes.find((entry) => entry.id === child.class_id);
+      return {
+        child,
+        class_name: classRoom?.name ?? "Unknown class",
+        grade: classRoom?.grade ?? "Unknown grade",
+        guardian: guardians.find((entry) => entry.id === child.guardian_id),
+        subscription: child_subscriptions.find((entry) => entry.child_id === child.id) ?? null,
+        qr: child_qr.find((entry) => entry.child_id === child.id) ?? null,
+      };
+    });
 }
 
 export async function getMealHistory(schoolId: string) {
@@ -411,8 +568,7 @@ export async function getProblemsForSchool(schoolId: string) {
 export async function validateMeal(
   qr_payload: string,
   school_id: string,
-  meal_type: "BREAKFAST" | "LUNCH" | "DINNER",
-  operator_id: string
+  meal_type: "BREAKFAST" | "LUNCH" | "DINNER"
 ) {
   await wait(latency());
   const log: ValidationLog = {
@@ -438,21 +594,91 @@ export async function validateMeal(
   } else {
     const subscription = child_subscriptions.find((entry) => entry.child_id === child.id);
     const today = todayISO();
-    if (!subscription || subscription.status !== "ACTIVE") {
-      reason = "NO_SUBSCRIPTION";
-    } else if (subscription.end_date < today) {
-      reason = "EXPIRED";
+    const alreadyServedSameMealToday = meal_serves.some(
+      (serve) =>
+        serve.child_id === child.id &&
+        serve.serve_date === today &&
+        serve.meal_type === meal_type
+    );
+    const alreadyServedAnyMealToday = meal_serves.some(
+      (serve) => serve.child_id === child.id && serve.serve_date === today
+    );
+
+    if (alreadyServedSameMealToday) {
+      reason = "ALREADY_SERVED";
+    } else if (!subscription || subscription.status !== "ACTIVE" || subscription.end_date < today) {
+      // Grace model: 7-day free meals from first serve
+      const grace = grace_periods.find((entry) => entry.child_id === child.id) as GracePeriod | undefined;
+      const startDate = grace?.start_date ?? today;
+      const start = new Date(startDate);
+      const diffDays = Math.floor((new Date(today).getTime() - start.getTime()) / 86400000);
+      const withinGrace = diffDays >= 0 && diffDays < 7;
+
+      if (alreadyServedAnyMealToday) {
+        reason = "ALREADY_SERVED";
+      } else if (!withinGrace || (grace && grace.days_used >= 7)) {
+        reason = "GRACE_EXPIRED";
+      } else {
+        const serve: MealServe = {
+          id: uid("ms"),
+          child_id: child.id,
+          school_id,
+          meal_type,
+          serve_date: today,
+          created_at: new Date().toISOString(),
+          is_grace: true,
+        };
+        meal_serves.push(serve);
+
+        if (grace) {
+          grace.days_used += 1;
+          grace.last_served_date = today;
+        } else {
+          grace_periods.push({
+            child_id: child.id,
+            start_date: today,
+            days_used: 1,
+            last_served_date: today,
+            notified: false,
+          });
+        }
+
+        const activeGrace = grace_periods.find((entry) => entry.child_id === child.id);
+        if (activeGrace && !activeGrace.notified) {
+          const guardian = guardians.find((entry) => entry.id === child.guardian_id);
+          const message = `FeedClass notice: ${child.full_name} is now on a grace period with one free meal per day. Meals will stop after the grace period ends if the subscription is not paid.`;
+          message_outbox.push({
+            id: uid("msg"),
+            channel: guardian?.preferred_channel ?? "SMS",
+            recipient: guardian?.phone ?? "unknown",
+            status: "SENT",
+            payload: message,
+            created_at: new Date().toISOString(),
+          });
+          message_logs.push({
+            id: uid("ml"),
+            status: "SENT",
+            detail: message,
+            created_at: new Date().toISOString(),
+          });
+          activeGrace.notified = true;
+        }
+
+        transactions.push({
+          id: uid("t"),
+          child_id: child.id,
+          type: "GRACE_MEAL",
+          amount: 0,
+          metadata: { meal_type, grace: "true" },
+          created_at: new Date().toISOString(),
+        });
+
+        reason = "OK";
+        log.result = "SUCCESS";
+        log.reason_code = "OK";
+      }
     } else if (subscription.meals_remaining <= 0) {
       reason = "INSUFFICIENT_MEALS";
-    } else if (
-      meal_serves.some(
-        (serve) =>
-          serve.child_id === child.id &&
-          serve.serve_date === today &&
-          serve.meal_type === meal_type
-      )
-    ) {
-      reason = "ALREADY_SERVED";
     } else {
       const serve: MealServe = {
         id: uid("ms"),
@@ -518,13 +744,16 @@ export async function generateBadgesPdf(classId: string) {
 
 export async function getAllData() {
   await wait(latency());
+  await ensureBlockchainAnchors();
   return {
     schools,
     classes,
     children,
     guardians,
+    school_staff,
     child_subscriptions,
     child_qr,
     subscription_plans,
+    blockchain_anchors,
   } as const;
 }

@@ -1,4 +1,6 @@
-export type Role = "ADMIN" | "SUPERVISOR" | "DONOR_READONLY";
+export type Role = "ADMIN" | "SCHOOL_ADMIN" | "DONOR_READONLY";
+
+export type SchoolStaffRole = "SUPERVISOR";
 
 export type MealType = "BREAKFAST" | "LUNCH" | "DINNER";
 
@@ -7,6 +9,7 @@ export type SubscriptionStatus = "ACTIVE" | "EXPIRED" | "PAUSED" | "NONE";
 export type TransactionType =
   | "SUBSCRIPTION_PURCHASE"
   | "DEBIT_MEAL"
+  | "GRACE_MEAL"
   | "ADJUSTMENT";
 
 export type PaymentStatus = "PENDING" | "PAID" | "FAILED";
@@ -20,6 +23,7 @@ export type ReasonCode =
   | "WRONG_SCHOOL"
   | "INACTIVE_CHILD"
   | "INSUFFICIENT_MEALS"
+  | "GRACE_EXPIRED"
   | "OK";
 
 export interface User {
@@ -27,6 +31,29 @@ export interface User {
   name: string;
   role: Role;
   assigned_school_id?: string;
+}
+
+export interface SchoolStaff {
+  id: string;
+  school_id: string;
+  name: string;
+  email: string;
+  role: SchoolStaffRole;
+  access_active: boolean;
+}
+
+export interface BlockchainAnchor {
+  id: string;
+  anchor_date: string;
+  meal_count: number;
+  school_ids: string[];
+  merkle_root: string;
+  celo_tx_hash: string;
+  celo_block_number: number;
+  financing_total: number;
+  supplier_cost_total: number;
+  status: "ANCHORED";
+  created_at: string;
 }
 
 export interface School {
@@ -56,6 +83,7 @@ export interface Child {
   class_id: string;
   full_name: string;
   guardian_id: string;
+  profile_image_url?: string;
   active: boolean;
 }
 
@@ -117,6 +145,7 @@ export interface MealServe {
   meal_type: MealType;
   serve_date: string;
   created_at: string;
+  is_grace?: boolean;
 }
 
 export interface ValidationLog {
@@ -174,6 +203,23 @@ export interface SupplierPayment {
   invoice_id: string;
   amount: number;
   paid_at: string;
+}
+
+export interface GracePeriod {
+  child_id: string;
+  start_date: string;
+  days_used: number;
+  last_served_date?: string;
+  notified: boolean;
+}
+
+export interface SupervisorChildLookupItem {
+  child: Child;
+  class_name: string;
+  grade: string;
+  guardian?: Guardian;
+  subscription?: ChildSubscription | null;
+  qr?: ChildQr | null;
 }
 
 export interface AnomalyAlert {

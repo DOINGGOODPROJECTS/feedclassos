@@ -1,8 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getSupervisorOverview, getValidationLogs, getSchools, getProblemsForSchool } from "@/lib/mockApi";
-import { Child, ValidationLog, School } from "@/lib/types";
+import {
+  getSupervisorOverview,
+  getValidationLogs,
+  getSchools,
+  getProblemsForSchool,
+} from "@/lib/mockApi";
+import { Child, School, ValidationLog } from "@/lib/types";
 import { useAppStore } from "@/lib/store";
 import { PageHeader } from "@/components/page-header";
 import { StatCards } from "@/components/stat-cards";
@@ -11,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 
 export default function SupervisorHomePage() {
   const schoolId = useAppStore((state) => state.supervisorSchoolId);
+  const roleLabel = "School Admin";
   const [overview, setOverview] = useState<Awaited<ReturnType<typeof getSupervisorOverview>> | null>(null);
   const [logs, setLogs] = useState<ValidationLog[]>([]);
   const [school, setSchool] = useState<School | null>(null);
@@ -28,7 +34,7 @@ export default function SupervisorHomePage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="School Admin · Home"
+        title={`${roleLabel} · Home`}
         description={school ? `Daily ops dashboard · ${school.name}` : "Loading school"}
       />
 

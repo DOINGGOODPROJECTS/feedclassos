@@ -19,7 +19,7 @@ export default function SupervisorScanPage() {
   const [result, setResult] = useState<{ status: string; reason: string } | null>(null);
 
   const handleValidate = async () => {
-    const response = await validateMeal(payload.trim(), schoolId, mealType, "operator-1");
+    const response = await validateMeal(payload.trim(), schoolId, mealType);
     if (response.result === "SUCCESS") {
       setResult({ status: "SUCCESS", reason: "Meal served" });
       push({ title: "Meal served", description: response.child?.full_name ?? "", variant: "success" });

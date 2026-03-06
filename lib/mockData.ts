@@ -20,13 +20,37 @@ import {
   Transaction,
   User,
   ValidationLog,
+  GracePeriod,
+  SchoolStaff,
+  BlockchainAnchor,
 } from "./types";
 
 export const users: User[] = [
   { id: "u1", name: "Ava Mendez", role: "ADMIN" },
-  { id: "u2", name: "Jonah Tetteh", role: "SUPERVISOR", assigned_school_id: "s1" },
+  { id: "u2", name: "Jonah Tetteh", role: "SCHOOL_ADMIN", assigned_school_id: "s1" },
   { id: "u3", name: "Maya Patel", role: "DONOR_READONLY" },
 ];
+
+export const school_staff: SchoolStaff[] = [
+  {
+    id: "st1",
+    school_id: "s1",
+    name: "Kojo Asare",
+    email: "kojo.asare@riverbend.edu",
+    role: "SUPERVISOR",
+    access_active: true,
+  },
+  {
+    id: "st2",
+    school_id: "s1",
+    name: "Esi Lamptey",
+    email: "esi.lamptey@riverbend.edu",
+    role: "SUPERVISOR",
+    access_active: true,
+  },
+];
+
+export const blockchain_anchors: BlockchainAnchor[] = [];
 
 export const schools: School[] = [
   { id: "s1", name: "Riverbend Primary", location: "Accra North" },
@@ -56,6 +80,7 @@ export const children: Child[] = [
     class_id: "c1",
     full_name: "Selena Nyarko",
     guardian_id: "g1",
+    profile_image_url: "https://images.unsplash.com/photo-1519345182560-3f2917c472ef?auto=format&fit=crop&w=320&q=80",
     active: true,
   },
   {
@@ -65,6 +90,7 @@ export const children: Child[] = [
     class_id: "c2",
     full_name: "Jordan Bediako",
     guardian_id: "g2",
+    profile_image_url: "https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?auto=format&fit=crop&w=320&q=80",
     active: true,
   },
   {
@@ -74,6 +100,7 @@ export const children: Child[] = [
     class_id: "c3",
     full_name: "Alina Carver",
     guardian_id: "g3",
+    profile_image_url: "https://images.unsplash.com/photo-1503919545889-aef636e10ad4?auto=format&fit=crop&w=320&q=80",
     active: false,
   },
   {
@@ -83,6 +110,7 @@ export const children: Child[] = [
     class_id: "c4",
     full_name: "Micah Owusu",
     guardian_id: "g1",
+    profile_image_url: "https://images.unsplash.com/photo-1545696968-1a5245650b36?auto=format&fit=crop&w=320&q=80",
     active: true,
   },
   {
@@ -92,6 +120,7 @@ export const children: Child[] = [
     class_id: "c5",
     full_name: "Ama Dede",
     guardian_id: "g2",
+    profile_image_url: "https://images.unsplash.com/photo-1516627145497-ae6968895b74?auto=format&fit=crop&w=320&q=80",
     active: true,
   },
 ];
@@ -226,6 +255,16 @@ export const validation_logs: ValidationLog[] = [
     result: "SUCCESS",
     reason_code: "OK",
     created_at: "2026-03-02T12:00:00Z",
+  },
+];
+
+export const grace_periods: GracePeriod[] = [
+  {
+    child_id: "ch3",
+    start_date: "2026-03-01",
+    days_used: 2,
+    last_served_date: "2026-03-02",
+    notified: true,
   },
 ];
 

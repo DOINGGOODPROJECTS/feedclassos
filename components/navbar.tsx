@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { getSchools } from "@/lib/mockApi";
 import { School } from "@/lib/types";
 import { useAppStore } from "@/lib/store";
@@ -16,6 +17,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 
 export function Navbar() {
+  const router = useRouter();
+  const pathname = usePathname();
   const role = useAppStore((state) => state.role);
   const activeSchoolId = useAppStore((state) => state.activeSchoolId);
   const supervisorSchoolId = useAppStore((state) => state.supervisorSchoolId);
@@ -28,9 +31,9 @@ export function Navbar() {
   }, []);
 
   const supervisorSchool = schools.find((school) => school.id === supervisorSchoolId);
-  const roleLabels: Record<"ADMIN" | "SUPERVISOR" | "DONOR_READONLY", string> = {
+  const roleLabels: Record<"ADMIN" | "SCHOOL_ADMIN" | "DONOR_READONLY", string> = {
     ADMIN: "Program Admin",
-    SUPERVISOR: "School Admin",
+    SCHOOL_ADMIN: "School Admin",
     DONOR_READONLY: "Donor",
   };
 
@@ -38,9 +41,20 @@ export function Navbar() {
     document.cookie = `fc_role=${role}; path=/; max-age=31536000`;
   }, [role]);
 
-  const handleRoleChange = (nextRole: "ADMIN" | "SUPERVISOR" | "DONOR_READONLY") => {
+  const handleRoleChange = (nextRole: "ADMIN" | "SCHOOL_ADMIN" | "DONOR_READONLY") => {
     setRole(nextRole);
     document.cookie = `fc_role=${nextRole}; path=/; max-age=31536000`;
+
+    const targetPath =
+      nextRole === "ADMIN"
+        ? "/app/admin/dashboard"
+        : nextRole === "DONOR_READONLY"
+          ? "/app/donor/dashboard"
+          : "/app/supervisor/home";
+
+    if (pathname !== targetPath) {
+      router.push(targetPath);
+    }
   };
 
   return (
@@ -80,7 +94,7 @@ export function Navbar() {
             </div>
           )}
 
-          {role === "SUPERVISOR" && supervisorSchool && (
+          {role === "SCHOOL_ADMIN" && supervisorSchool && (
             <Badge variant="secondary">My School: {supervisorSchool.name}</Badge>
           )}
 
@@ -92,7 +106,7 @@ export function Navbar() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => handleRoleChange("ADMIN")}>Program Admin</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleRoleChange("SUPERVISOR")}>School Admin</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleRoleChange("SCHOOL_ADMIN")}>School Admin</DropdownMenuItem>
               <DropdownMenuItem onClick={() => handleRoleChange("DONOR_READONLY")}>
                 Donor
               </DropdownMenuItem>
