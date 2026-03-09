@@ -42,20 +42,6 @@ export interface SchoolStaff {
   access_active: boolean;
 }
 
-export interface BlockchainAnchor {
-  id: string;
-  anchor_date: string;
-  meal_count: number;
-  school_ids: string[];
-  merkle_root: string;
-  celo_tx_hash: string;
-  celo_block_number: number;
-  financing_total: number;
-  supplier_cost_total: number;
-  status: "ANCHORED";
-  created_at: string;
-}
-
 export interface School {
   id: string;
   name: string;
@@ -128,6 +114,7 @@ export interface PaymentIntent {
   reference: string;
   status: PaymentStatus;
   payment_url: string;
+  created_at: string;
 }
 
 export interface PaymentEvent {
@@ -136,6 +123,25 @@ export interface PaymentEvent {
   intent_id: string;
   status: PaymentStatus;
   created_at: string;
+}
+
+export interface PaymentTransactionRecord {
+  intent_id: string;
+  reference: string;
+  status: PaymentStatus;
+  amount: number;
+  payment_url: string;
+  created_at: string;
+  child_id: string;
+  child_name: string;
+  school_id: string;
+  school_name: string;
+  class_id: string;
+  class_name: string;
+  guardian_name: string;
+  guardian_phone: string;
+  plan_id: string;
+  plan_name: string;
 }
 
 export interface MealServe {

@@ -22,7 +22,6 @@ import {
   ValidationLog,
   GracePeriod,
   SchoolStaff,
-  BlockchainAnchor,
 } from "./types";
 
 export const users: User[] = [
@@ -49,8 +48,6 @@ export const school_staff: SchoolStaff[] = [
     access_active: true,
   },
 ];
-
-export const blockchain_anchors: BlockchainAnchor[] = [];
 
 export const schools: School[] = [
   { id: "s1", name: "Riverbend Primary", location: "Accra North" },
@@ -183,6 +180,14 @@ export const child_subscriptions: ChildSubscription[] = [
     meals_remaining: 5,
     plan_id: "p1",
   },
+  {
+    child_id: "ch5",
+    status: "EXPIRED",
+    start_date: "2026-01-12",
+    end_date: "2026-02-12",
+    meals_remaining: 0,
+    plan_id: "p1",
+  },
 ];
 
 export const transactions: Transaction[] = [
@@ -214,6 +219,16 @@ export const transactions: Transaction[] = [
 
 export const payment_intents: PaymentIntent[] = [
   {
+    id: "pi0",
+    child_id: "ch1",
+    plan_id: "p2",
+    amount: 55,
+    reference: "INV-1998",
+    status: "PAID",
+    payment_url: "https://pay.mock/INV-1998",
+    created_at: "2026-02-18T09:15:00Z",
+  },
+  {
     id: "pi1",
     child_id: "ch2",
     plan_id: "p2",
@@ -221,6 +236,7 @@ export const payment_intents: PaymentIntent[] = [
     reference: "INV-2001",
     status: "PENDING",
     payment_url: "https://pay.mock/INV-2001",
+    created_at: "2026-03-01T08:00:00Z",
   },
   {
     id: "pi2",
@@ -230,6 +246,37 @@ export const payment_intents: PaymentIntent[] = [
     reference: "INV-2002",
     status: "FAILED",
     payment_url: "https://pay.mock/INV-2002",
+    created_at: "2026-03-02T10:30:00Z",
+  },
+  {
+    id: "pi3",
+    child_id: "ch4",
+    plan_id: "p1",
+    amount: 40,
+    reference: "INV-2003",
+    status: "PENDING",
+    payment_url: "https://pay.mock/INV-2003",
+    created_at: "2026-03-03T07:40:00Z",
+  },
+  {
+    id: "pi4",
+    child_id: "ch3",
+    plan_id: "p2",
+    amount: 55,
+    reference: "INV-2004",
+    status: "FAILED",
+    payment_url: "https://pay.mock/INV-2004",
+    created_at: "2026-03-04T11:20:00Z",
+  },
+  {
+    id: "pi5",
+    child_id: "ch1",
+    plan_id: "p3",
+    amount: 48,
+    reference: "INV-2005",
+    status: "PENDING",
+    payment_url: "https://pay.mock/INV-2005",
+    created_at: "2026-03-05T14:05:00Z",
   },
 ];
 

@@ -15,8 +15,8 @@ export const navByRole: Record<Role, NavItem[]> = {
     { label: "Plans", href: "/app/admin/plans" },
     { label: "Ledger", href: "/app/admin/ledger" },
     { label: "Payments", href: "/app/admin/payments" },
+    { label: "Transactions", href: "/app/admin/transactions" },
     { label: "Notifications", href: "/app/admin/notifications" },
-    { label: "Blockchain", href: "/app/admin/blockchain" },
     { label: "Suppliers", href: "/app/admin/suppliers" },
     { label: "Invoices", href: "/app/admin/invoices" },
     { label: "Exports", href: "/app/admin/exports" },
@@ -25,6 +25,8 @@ export const navByRole: Record<Role, NavItem[]> = {
   SCHOOL_ADMIN: [
     { label: "Home", href: "/app/supervisor/home" },
     { label: "Children", href: "/app/supervisor/children" },
+    { label: "Payments", href: "/app/supervisor/payments" },
+    { label: "Transactions", href: "/app/supervisor/transactions" },
     { label: "Supervisors", href: "/app/supervisor/supervisors" },
     { label: "Scan", href: "/app/supervisor/scan" },
     { label: "History", href: "/app/supervisor/history" },

@@ -4,46 +4,61 @@ import { useEffect, useMemo, useState } from "react";
 import {
   getClasses,
   getAllData,
-  getPaymentIntents,
+  getPaymentIntentsForSchool,
   sendPaymentLinkToGuardian,
 } from "@/lib/mockApi";
 import { Child, ClassRoom, Guardian, PaymentIntent, School, SubscriptionPlan } from "@/lib/types";
+import { useAppStore } from "@/lib/store";
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/data-table";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency } from "@/lib/utils";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-export default function AdminPaymentsPage() {
+export default function SchoolAdminPaymentsPage() {
   const { push } = useToast();
+  const schoolId = useAppStore((state) => state.supervisorSchoolId);
   const [intents, setIntents] = useState<PaymentIntent[]>([]);
   const [children, setChildren] = useState<Child[]>([]);
   const [guardians, setGuardians] = useState<Guardian[]>([]);
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [schools, setSchools] = useState<School[]>([]);
   const [classes, setClasses] = useState<ClassRoom[]>([]);
-  const [schoolId, setSchoolId] = useState<string>("ALL");
   const [classId, setClassId] = useState<string>("ALL");
 
   useEffect(() => {
-    getPaymentIntents().then(setIntents);
-    getClasses().then(setClasses);
+    getPaymentIntentsForSchool(schoolId).then(setIntents);
+    getClasses().then((data) => setClasses(data.filter((entry) => entry.school_id === schoolId)));
     getAllData().then((data) => {
       setChildren(data.children);
       setGuardians(data.guardians);
       setPlans(data.subscription_plans);
       setSchools(data.schools);
     });
-  }, []);
+  }, [schoolId]);
 
-  const handleSendPaymentLink = async (intent: PaymentIntent) => {
+  const school = useMemo(() => schools.find((entry) => entry.id === schoolId) ?? null, [schoolId, schools]);
+  const filteredIntents = useMemo(
+    () =>
+      intents.filter((intent) => {
+        if (classId === "ALL") {
+          return true;
+        }
+        const child = children.find((entry) => entry.id === intent.child_id);
+        return child?.class_id === classId;
+      }),
+    [intents, children, classId]
+  );
+
+  const handleResend = async (intent: PaymentIntent) => {
     const child = children.find((entry) => entry.id === intent.child_id);
     if (!child) {
       return;
     }
     const result = await sendPaymentLinkToGuardian(child.id, intent.plan_id);
     if (!result) {
-      push({ title: "Send failed", description: "Could not send payment link.", variant: "danger" });
+      push({ title: "Resend failed", description: "Unable to send payment link.", variant: "danger" });
       return;
     }
     setIntents((prev) => {
@@ -57,71 +72,36 @@ export default function AdminPaymentsPage() {
     });
   };
 
-  const visibleClasses = useMemo(
-    () => classes.filter((entry) => schoolId === "ALL" || entry.school_id === schoolId),
-    [classes, schoolId]
-  );
-
-  const filteredIntents = useMemo(
-    () =>
-      intents.filter((intent) => {
-        const child = children.find((entry) => entry.id === intent.child_id);
-        if (!child) {
-          return false;
-        }
-        if (schoolId !== "ALL" && child.school_id !== schoolId) {
-          return false;
-        }
-        if (classId !== "ALL" && child.class_id !== classId) {
-          return false;
-        }
-        return true;
-      }),
-    [intents, children, schoolId, classId]
-  );
-
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Program Admin · Payments"
-        description="Payment intents, status tracking, link management, and admin-only updates."
+        title="School Admin · Payments"
+        description={school ? `Track payment links for ${school.name}.` : "Track payment links for your school."}
       />
 
       <div className="rounded-3xl border border-slate-200 bg-white p-4">
-        <div className="mb-4 grid gap-3 md:grid-cols-2">
-          <select
-            value={schoolId}
-            onChange={(event) => {
-              setSchoolId(event.target.value);
-              setClassId("ALL");
-            }}
-            className="h-10 rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300"
-          >
-            <option value="ALL">All schools</option>
-            {schools.map((school) => (
-              <option key={school.id} value={school.id}>
-                {school.name}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={classId}
-            onChange={(event) => setClassId(event.target.value)}
-            className="h-10 rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300"
-          >
-            <option value="ALL">All classes</option>
-            {visibleClasses.map((entry) => (
-              <option key={entry.id} value={entry.id}>
-                {entry.name}
-              </option>
-            ))}
-          </select>
+        <div className="mb-4 max-w-[240px]">
+          <Select value={classId} onValueChange={setClassId}>
+            <SelectTrigger>
+              <SelectValue placeholder="All classes" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All classes</SelectItem>
+              {classes.map((entry) => (
+                <SelectItem key={entry.id} value={entry.id}>
+                  {entry.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <DataTable
           columns={[
-            { header: "Reference", render: (row: PaymentIntent) => row.reference },
+            {
+              header: "Reference",
+              render: (row: PaymentIntent) => row.reference,
+            },
             {
               header: "Child",
               render: (row: PaymentIntent) =>
@@ -157,18 +137,16 @@ export default function AdminPaymentsPage() {
                   rel="noreferrer"
                   className="text-xs text-slate-600 underline-offset-2 hover:underline"
                 >
-                  Open payment page
+                  Open link
                 </a>
               ),
             },
             {
               header: "Actions",
               render: (row: PaymentIntent) => (
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" size="sm" onClick={() => handleSendPaymentLink(row)}>
-                    Send payment link
-                  </Button>
-                </div>
+                <Button variant="outline" size="sm" onClick={() => handleResend(row)}>
+                  Send payment link
+                </Button>
               ),
             },
           ]}

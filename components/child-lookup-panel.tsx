@@ -1,17 +1,29 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { getSchools, getSupervisorChildrenLookup, getSupervisorOverview } from "@/lib/mockApi";
-import { School, SupervisorChildLookupItem } from "@/lib/types";
+import { useEffect, useMemo, useState } from "react";
+import {
+  getPaymentIntentsForSchool,
+  getSchools,
+  getSupervisorChildrenLookup,
+  getSupervisorOverview,
+  sendPaymentLinkToGuardian,
+} from "@/lib/mockApi";
+import { PaymentIntent, School, SupervisorChildLookupItem } from "@/lib/types";
 import { useAppStore } from "@/lib/store";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { DataTable } from "@/components/data-table";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/use-toast";
+import { formatCurrency } from "@/lib/utils";
 
 export function ChildLookupPanel() {
+  const { push } = useToast();
   const schoolId = useAppStore((state) => state.supervisorSchoolId);
   const [school, setSchool] = useState<School | null>(null);
   const [lookupItems, setLookupItems] = useState<SupervisorChildLookupItem[]>([]);
+  const [paymentIntents, setPaymentIntents] = useState<PaymentIntent[]>([]);
   const [classOptions, setClassOptions] = useState<Array<{ id: string; label: string }>>([{ id: "ALL", label: "All classes" }]);
   const [selectedClassId, setSelectedClassId] = useState<string>("ALL");
   const [query, setQuery] = useState("");
@@ -24,30 +36,74 @@ export function ChildLookupPanel() {
         overview.byClass.map((item) => ({ id: item.class_id, label: item.class_name }))
       ));
     });
+    getPaymentIntentsForSchool(schoolId).then(setPaymentIntents);
     getSupervisorChildrenLookup(schoolId).then((data) => {
       setLookupItems(data);
       setSelectedChildId((current) => current || data[0]?.child.id || "");
     });
   }, [schoolId]);
 
-  const filteredLookupItems = lookupItems.filter((item) => {
-    const matchesClass = selectedClassId === "ALL" || item.child.class_id === selectedClassId;
-    const matchesQuery = item.child.full_name.toLowerCase().includes(query.toLowerCase());
-    return matchesClass && matchesQuery;
-  });
+  const filteredLookupItems = useMemo(
+    () =>
+      lookupItems.filter((item) => {
+        const matchesClass = selectedClassId === "ALL" || item.child.class_id === selectedClassId;
+        const haystack = [
+          item.child.full_name,
+          item.child.student_id,
+          item.guardian?.name ?? "",
+          item.guardian?.phone ?? "",
+        ]
+          .join(" ")
+          .toLowerCase();
+        return matchesClass && haystack.includes(query.toLowerCase());
+      }),
+    [lookupItems, query, selectedClassId]
+  );
+
+  const latestIntentByChildId = useMemo(() => {
+    const map = new Map<string, PaymentIntent>();
+    paymentIntents.forEach((intent) => {
+      map.set(intent.child_id, intent);
+    });
+    return map;
+  }, [paymentIntents]);
+
   const selectedLookupItem =
     filteredLookupItems.find((item) => item.child.id === selectedChildId) ?? filteredLookupItems[0] ?? null;
+  const selectedPaymentIntent = selectedLookupItem ? latestIntentByChildId.get(selectedLookupItem.child.id) ?? null : null;
+
+  const handleSendPaymentLink = async (childId: string, childName: string) => {
+    const result = await sendPaymentLinkToGuardian(childId);
+    if (!result) {
+      push({
+        title: "Payment link failed",
+        description: `Could not prepare a payment link for ${childName}.`,
+        variant: "danger",
+      });
+      return;
+    }
+
+    setPaymentIntents((prev) => {
+      const remaining = prev.filter((entry) => entry.id !== result.intent.id);
+      return [...remaining, result.intent];
+    });
+    push({
+      title: "Payment link sent",
+      description: `${childName} guardian notified via ${result.channel}.`,
+      variant: "success",
+    });
+  };
 
   return (
     <div className="grid gap-4 xl:grid-cols-[1.2fr,0.8fr]">
       <Card>
         <CardHeader>
-          <CardTitle>Child lookup fallback</CardTitle>
+          <CardTitle>All children</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-slate-500">
-            Use this when a child does not have a badge. Filter by class, search by name, and open the profile to
-            verify the QR badge and enrollment details.
+            Review children in your school, open the child profile, and send payment links to parents when a
+            subscription needs renewal.
           </p>
           <div className="grid gap-3 md:grid-cols-[220px,1fr]">
             <select
@@ -64,43 +120,48 @@ export function ChildLookupPanel() {
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search child by name"
+              placeholder="Search by child, ID, guardian, or phone"
             />
           </div>
-          <div className="space-y-2">
-            {filteredLookupItems.length === 0 ? (
-              <p className="rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-500">
-                No children found for this class filter and name search.
-              </p>
-            ) : (
-              filteredLookupItems.map((item) => (
-                <button
-                  key={item.child.id}
-                  type="button"
-                  onClick={() => setSelectedChildId(item.child.id)}
-                  className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left transition ${
-                    selectedLookupItem?.child.id === item.child.id
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-200 bg-white text-slate-900"
-                  }`}
-                >
-                  <div>
-                    <p className="text-sm font-semibold">{item.child.full_name}</p>
-                    <p
-                      className={`text-xs ${
-                        selectedLookupItem?.child.id === item.child.id ? "text-slate-200" : "text-slate-500"
-                      }`}
-                    >
-                      {item.grade} · {item.class_name} · {item.child.student_id}
-                    </p>
-                  </div>
-                  <Badge variant={item.child.active ? "success" : "danger"}>
-                    {item.child.active ? "Active" : "Inactive"}
-                  </Badge>
-                </button>
-              ))
-            )}
-          </div>
+          {filteredLookupItems.length === 0 ? (
+            <p className="rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-500">
+              No children found for this class filter and search.
+            </p>
+          ) : (
+            <DataTable
+              columns={[
+                { header: "Student ID", render: (row: SupervisorChildLookupItem) => row.child.student_id },
+                { header: "Name", render: (row: SupervisorChildLookupItem) => row.child.full_name },
+                { header: "Class", render: (row: SupervisorChildLookupItem) => row.class_name },
+                { header: "Guardian phone", render: (row: SupervisorChildLookupItem) => row.guardian?.phone ?? "-" },
+                { header: "Guardian name", render: (row: SupervisorChildLookupItem) => row.guardian?.name ?? "-" },
+                { header: "Status", render: (row: SupervisorChildLookupItem) => (row.child.active ? "Active" : "Inactive") },
+                { header: "Subscription", render: (row: SupervisorChildLookupItem) => row.subscription?.status ?? "NONE" },
+                {
+                  header: "Meals remaining",
+                  render: (row: SupervisorChildLookupItem) => row.subscription?.meals_remaining ?? 0,
+                },
+                {
+                  header: "Actions",
+                  render: (row: SupervisorChildLookupItem) => (
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setSelectedChildId(row.child.id)}>
+                        View child
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleSendPaymentLink(row.child.id, row.child.full_name)}
+                      >
+                        Send payment link
+                      </Button>
+                    </div>
+                  ),
+                },
+              ]}
+              data={filteredLookupItems}
+            />
+          )}
         </CardContent>
       </Card>
 
@@ -181,6 +242,33 @@ export function ChildLookupPanel() {
                     <p>Class: {selectedLookupItem.class_name}</p>
                     <p>Grade: {selectedLookupItem.grade}</p>
                     <p>Student ID: {selectedLookupItem.child.student_id}</p>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 px-4 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Payments</p>
+                      <p className="mt-2 text-sm font-semibold text-slate-900">
+                        {selectedPaymentIntent?.reference ?? "No payment intent yet"}
+                      </p>
+                      <p className="text-sm text-slate-500">
+                        {selectedPaymentIntent
+                          ? `${formatCurrency(selectedPaymentIntent.amount)} · ${selectedPaymentIntent.status}`
+                          : "Send a payment link to create a payable request for the parent."}
+                      </p>
+                      {selectedPaymentIntent && (
+                        <p className="mt-2 break-all text-xs text-slate-500">{selectedPaymentIntent.payment_url}</p>
+                      )}
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() =>
+                        handleSendPaymentLink(selectedLookupItem.child.id, selectedLookupItem.child.full_name)
+                      }
+                    >
+                      Send link
+                    </Button>
                   </div>
                 </div>
               </div>

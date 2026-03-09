@@ -2,7 +2,6 @@ import {
   ActivityLog,
   AiReport,
   AnomalyAlert,
-  BlockchainAnchor,
   Child,
   ClassRoom,
   MealServe,
@@ -14,20 +13,15 @@ import {
   Supplier,
   ValidationLog,
   GracePeriod,
+  PaymentTransactionRecord,
   SchoolStaff,
   SchoolStaffRole,
   SupervisorChildLookupItem,
 } from "./types";
 import {
-  buildAnchorHashes,
-  getFinancingTotalForDate,
-  getSupplierCostTotalForDate,
-} from "./blockchain";
-import {
   activity_logs,
   ai_reports,
   anomaly_alerts,
-  blockchain_anchors,
   child_qr,
   child_subscriptions,
   children,
@@ -54,6 +48,31 @@ const latency = () => 400 + Math.floor(Math.random() * 400);
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const uid = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
+
+function syncExpiredSubscriptionPaymentIntents() {
+  child_subscriptions
+    .filter((subscription) => subscription.status === "EXPIRED")
+    .forEach((subscription) => {
+      const existingIntent = payment_intents.find(
+        (intent) => intent.child_id === subscription.child_id && intent.plan_id === subscription.plan_id
+      );
+      if (existingIntent) {
+        return;
+      }
+
+      const plan = subscription_plans.find((entry) => entry.id === subscription.plan_id);
+      payment_intents.push({
+        id: uid("pi"),
+        child_id: subscription.child_id,
+        plan_id: subscription.plan_id,
+        amount: plan?.price ?? 0,
+        reference: `INV-${Math.floor(2000 + Math.random() * 8000)}`,
+        status: "PENDING",
+        payment_url: `https://pay.mock/expired-${subscription.child_id}`,
+        created_at: new Date().toISOString(),
+      });
+    });
+}
 
 export async function getSchools() {
   await wait(latency());
@@ -240,7 +259,17 @@ export async function getLedger() {
 
 export async function getPaymentIntents() {
   await wait(latency());
+  syncExpiredSubscriptionPaymentIntents();
   return [...payment_intents];
+}
+
+export async function getPaymentIntentsForSchool(schoolId: string) {
+  await wait(latency());
+  syncExpiredSubscriptionPaymentIntents();
+  const schoolChildIds = new Set(
+    children.filter((child) => child.school_id === schoolId).map((child) => child.id)
+  );
+  return payment_intents.filter((intent) => schoolChildIds.has(intent.child_id));
 }
 
 export async function createPaymentIntent(childId: string, planId: string) {
@@ -254,9 +283,77 @@ export async function createPaymentIntent(childId: string, planId: string) {
     reference: `INV-${Math.floor(2000 + Math.random() * 8000)}`,
     status: "PENDING",
     payment_url: "https://pay.mock/new",
+    created_at: new Date().toISOString(),
   };
   payment_intents.push(intent);
   return intent;
+}
+
+export async function updatePaymentIntentStatus(
+  intentId: string,
+  status: "PENDING" | "PAID" | "FAILED"
+) {
+  await wait(latency());
+  const intent = payment_intents.find((entry) => entry.id === intentId);
+  if (!intent) {
+    return null;
+  }
+  intent.status = status;
+  return intent;
+}
+
+export async function deletePaymentIntent(intentId: string) {
+  await wait(latency());
+  const index = payment_intents.findIndex((entry) => entry.id === intentId);
+  if (index === -1) {
+    return false;
+  }
+  payment_intents.splice(index, 1);
+  return true;
+}
+
+export async function sendPaymentLinkToGuardian(childId: string, planId?: string) {
+  await wait(latency());
+
+  const child = children.find((entry) => entry.id === childId);
+  if (!child) {
+    return null;
+  }
+
+  const guardian = guardians.find((entry) => entry.id === child.guardian_id);
+  const subscription = child_subscriptions.find((entry) => entry.child_id === childId);
+  const resolvedPlanId =
+    planId ?? subscription?.plan_id ?? subscription_plans.find((entry) => entry.active)?.id ?? subscription_plans[0]?.id;
+
+  if (!resolvedPlanId) {
+    return null;
+  }
+
+  const existingPendingIntent = payment_intents.find(
+    (entry) => entry.child_id === childId && entry.plan_id === resolvedPlanId && entry.status === "PENDING"
+  );
+  const intent = existingPendingIntent ?? (await createPaymentIntent(childId, resolvedPlanId));
+  const plan = subscription_plans.find((entry) => entry.id === intent.plan_id);
+  const channel = guardian?.preferred_channel ?? "SMS";
+  const recipient = guardian?.phone ?? "unknown";
+  const payload = `Payment link for ${child.full_name}: ${intent.payment_url} (${plan?.name ?? "Meal plan"})`;
+
+  message_outbox.push({
+    id: uid("msg"),
+    channel,
+    recipient,
+    status: "SENT",
+    payload,
+    created_at: new Date().toISOString(),
+  });
+  message_logs.push({
+    id: uid("ml"),
+    status: "SENT",
+    detail: `Payment link sent to ${recipient}`,
+    created_at: new Date().toISOString(),
+  });
+
+  return { intent, recipient, channel };
 }
 
 export async function simulateWebhookSuccess(externalTxId: string, intentId: string) {
@@ -313,6 +410,45 @@ export async function simulateWebhookSuccess(externalTxId: string, intentId: str
   });
 
   return { status: "processed" } as const;
+}
+
+function buildPaymentTransactionRecords(paymentRows: PaymentIntent[]) {
+  return paymentRows.map((intent) => {
+    const child = children.find((entry) => entry.id === intent.child_id);
+    const guardian = guardians.find((entry) => entry.id === child?.guardian_id);
+    const school = schools.find((entry) => entry.id === child?.school_id);
+    const classRoom = classes.find((entry) => entry.id === child?.class_id);
+    const plan = subscription_plans.find((entry) => entry.id === intent.plan_id);
+
+    return {
+      intent_id: intent.id,
+      reference: intent.reference,
+      status: intent.status,
+      amount: intent.amount,
+      payment_url: intent.payment_url,
+      created_at: intent.created_at,
+      child_id: intent.child_id,
+      child_name: child?.full_name ?? intent.child_id,
+      school_id: school?.id ?? "",
+      school_name: school?.name ?? "-",
+      class_id: classRoom?.id ?? "",
+      class_name: classRoom?.name ?? "-",
+      guardian_name: guardian?.name ?? "-",
+      guardian_phone: guardian?.phone ?? "-",
+      plan_id: intent.plan_id,
+      plan_name: plan?.name ?? intent.plan_id,
+    } satisfies PaymentTransactionRecord;
+  });
+}
+
+export async function getPaymentTransactions() {
+  const intents = await getPaymentIntents();
+  return buildPaymentTransactionRecords(intents);
+}
+
+export async function getPaymentTransactionsForSchool(schoolId: string) {
+  const intents = await getPaymentIntentsForSchool(schoolId);
+  return buildPaymentTransactionRecords(intents);
 }
 
 export async function getMessageHealth() {
@@ -416,15 +552,7 @@ export async function getDonorKpis() {
     .filter((tx) => tx.type === "SUBSCRIPTION_PURCHASE")
     .reduce((sum, tx) => sum + tx.amount, 0);
   const costPerMeal = supplier_invoices.reduce((sum, inv) => sum + inv.amount, 0) / Math.max(totalMeals, 1);
-  const anchors = await getBlockchainAnchors();
-  return {
-    totalMeals,
-    totalChildren,
-    fundsReceived,
-    costPerMeal,
-    anchoredDays: anchors.length,
-    latestAnchor: anchors[0] ?? null,
-  };
+  return { totalMeals, totalChildren, fundsReceived, costPerMeal };
 }
 
 export async function getSupervisorOverview(schoolId: string) {
@@ -447,80 +575,6 @@ export async function getSupervisorOverview(schoolId: string) {
   });
 
   return { todayMeals: todayMeals.length, byClass, problems };
-}
-
-async function buildAnchorForDate(anchorDate: string): Promise<BlockchainAnchor | null> {
-  const meals = meal_serves.filter((entry) => entry.serve_date === anchorDate);
-  if (meals.length === 0) return null;
-
-  const { merkleRoot, celoTxHash } = await buildAnchorHashes(meals, anchorDate);
-  return {
-    id: uid("ba"),
-    anchor_date: anchorDate,
-    meal_count: meals.length,
-    school_ids: Array.from(new Set(meals.map((entry) => entry.school_id))),
-    merkle_root: merkleRoot,
-    celo_tx_hash: celoTxHash,
-    celo_block_number: 31250000 + blockchain_anchors.length * 19 + meals.length,
-    financing_total: getFinancingTotalForDate(anchorDate, transactions),
-    supplier_cost_total: getSupplierCostTotalForDate(anchorDate, supplier_invoices),
-    status: "ANCHORED",
-    created_at: new Date(`${anchorDate}T23:59:59Z`).toISOString(),
-  };
-}
-
-async function ensureBlockchainAnchors() {
-  const anchoredDates = new Set(blockchain_anchors.map((entry) => entry.anchor_date));
-  const servedDates = Array.from(new Set(meal_serves.map((entry) => entry.serve_date))).sort().reverse();
-  for (const anchorDate of servedDates) {
-    if (anchoredDates.has(anchorDate)) continue;
-    const anchor = await buildAnchorForDate(anchorDate);
-    if (anchor) {
-      blockchain_anchors.push(anchor);
-      anchoredDates.add(anchorDate);
-    }
-  }
-  blockchain_anchors.sort((left, right) => right.anchor_date.localeCompare(left.anchor_date));
-}
-
-export async function getBlockchainAnchors() {
-  await wait(latency());
-  await ensureBlockchainAnchors();
-  return [...blockchain_anchors];
-}
-
-export async function anchorMealsToBlockchain(anchorDate: string) {
-  await wait(latency());
-  await ensureBlockchainAnchors();
-  const existing = blockchain_anchors.find((entry) => entry.anchor_date === anchorDate);
-  if (existing) return existing;
-  const anchor = await buildAnchorForDate(anchorDate);
-  if (!anchor) return null;
-  blockchain_anchors.unshift(anchor);
-  blockchain_anchors.sort((left, right) => right.anchor_date.localeCompare(left.anchor_date));
-  return anchor;
-}
-
-export async function getBlockchainOverview() {
-  await wait(latency());
-  const anchors = await getBlockchainAnchors();
-  const anchoredMeals = anchors.reduce((sum, entry) => sum + entry.meal_count, 0);
-  const mealDates = Array.from(new Set(meal_serves.map((entry) => entry.serve_date)));
-  const anchoredDates = new Set(anchors.map((entry) => entry.anchor_date));
-  const anchoredCoverage =
-    mealDates.length === 0 ? 0 : Math.round((Array.from(anchoredDates).length / mealDates.length) * 100);
-  const financingTotal = anchors.reduce((sum, entry) => sum + entry.financing_total, 0);
-  const supplierCostTotal = anchors.reduce((sum, entry) => sum + entry.supplier_cost_total, 0);
-
-  return {
-    anchors,
-    anchoredMeals,
-    anchoredDays: anchors.length,
-    anchoredCoverage,
-    financingTotal,
-    supplierCostTotal,
-    latestAnchor: anchors[0] ?? null,
-  };
 }
 
 export async function getSupervisorChildrenLookup(schoolId: string): Promise<SupervisorChildLookupItem[]> {
@@ -744,7 +798,6 @@ export async function generateBadgesPdf(classId: string) {
 
 export async function getAllData() {
   await wait(latency());
-  await ensureBlockchainAnchors();
   return {
     schools,
     classes,
@@ -754,6 +807,5 @@ export async function getAllData() {
     child_subscriptions,
     child_qr,
     subscription_plans,
-    blockchain_anchors,
   } as const;
 }

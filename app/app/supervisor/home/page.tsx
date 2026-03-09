@@ -1,18 +1,21 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
+  getPaymentIntentsForSchool,
   getSupervisorOverview,
   getValidationLogs,
   getSchools,
   getProblemsForSchool,
 } from "@/lib/mockApi";
-import { Child, School, ValidationLog } from "@/lib/types";
+import { Child, PaymentIntent, School, ValidationLog } from "@/lib/types";
 import { useAppStore } from "@/lib/store";
 import { PageHeader } from "@/components/page-header";
 import { StatCards } from "@/components/stat-cards";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 export default function SupervisorHomePage() {
   const schoolId = useAppStore((state) => state.supervisorSchoolId);
@@ -21,15 +24,18 @@ export default function SupervisorHomePage() {
   const [logs, setLogs] = useState<ValidationLog[]>([]);
   const [school, setSchool] = useState<School | null>(null);
   const [problems, setProblems] = useState<Array<{ child: Child; reason: string }>>([]);
+  const [payments, setPayments] = useState<PaymentIntent[]>([]);
 
   useEffect(() => {
     getSupervisorOverview(schoolId).then(setOverview);
     getValidationLogs().then(setLogs);
     getSchools().then((data) => setSchool(data.find((entry) => entry.id === schoolId) ?? null));
     getProblemsForSchool(schoolId).then((data) => setProblems(data as Array<{ child: Child; reason: string }>));
+    getPaymentIntentsForSchool(schoolId).then(setPayments);
   }, [schoolId]);
 
   const failedLogs = logs.filter((log) => log.result === "FAILED").slice(0, 4);
+  const pendingPayments = payments.filter((entry) => entry.status === "PENDING");
 
   return (
     <div className="space-y-6">
@@ -43,6 +49,7 @@ export default function SupervisorHomePage() {
           items={[
             { label: "Meals served today", value: overview.todayMeals.toString(), helper: "Live" },
             { label: "Open problems", value: problems.length.toString(), helper: "Needs attention" },
+            { label: "Pending payments", value: pendingPayments.length.toString(), helper: "Parent follow-up" },
           ]}
         />
       )}
@@ -79,6 +86,32 @@ export default function SupervisorHomePage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Payments</CardTitle>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/app/supervisor/payments">Open payments</Link>
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {payments.length === 0 ? (
+            <p className="text-sm text-slate-500">No payment intents yet for this school.</p>
+          ) : (
+            payments.slice(-4).reverse().map((payment) => (
+              <div key={payment.id} className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium text-slate-700">{payment.reference}</p>
+                  <p className="text-xs text-slate-500">Child ID: {payment.child_id}</p>
+                </div>
+                <Badge variant={payment.status === "PAID" ? "success" : payment.status === "FAILED" ? "danger" : "warning"}>
+                  {payment.status}
+                </Badge>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
