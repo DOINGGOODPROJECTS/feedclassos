@@ -28,7 +28,6 @@ export const navByRole: Record<Role, NavItem[]> = {
     { label: "Payments", href: "/app/supervisor/payments" },
     { label: "Transactions", href: "/app/supervisor/transactions" },
     { label: "Supervisors", href: "/app/supervisor/supervisors" },
-    { label: "Scan", href: "/app/supervisor/scan" },
     { label: "History", href: "/app/supervisor/history" },
     { label: "Problems", href: "/app/supervisor/problems" },
   ],

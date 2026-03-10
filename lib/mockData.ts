@@ -23,6 +23,7 @@ import {
   GracePeriod,
   SchoolStaff,
 } from "./types";
+import { buildChildQrPayload, buildVerificationLink } from "./qr";
 
 export const users: User[] = [
   { id: "u1", name: "Ava Mendez", role: "ADMIN" },
@@ -124,8 +125,9 @@ export const children: Child[] = [
 
 export const child_qr: ChildQr[] = children.map((child) => ({
   child_id: child.id,
-  qr_payload: `SMMS-${child.student_id}`,
+  qr_payload: buildChildQrPayload(child),
   qr_image_url: "/qr-placeholder.svg",
+  verification_link: buildVerificationLink(buildChildQrPayload(child)),
 }));
 
 export const subscription_plans: SubscriptionPlan[] = [
@@ -298,7 +300,7 @@ export const validation_logs: ValidationLog[] = [
     id: "vl1",
     child_id: "ch1",
     school_id: "s1",
-    qr_payload: "SMMS-RB-1001",
+    qr_payload: buildChildQrPayload(children[0]),
     result: "SUCCESS",
     reason_code: "OK",
     created_at: "2026-03-02T12:00:00Z",

@@ -3,7 +3,9 @@ import {
   AiReport,
   AnomalyAlert,
   Child,
+  ChildQr,
   ClassRoom,
+  Guardian,
   MealServe,
   MessageOutbox,
   PaymentIntent,
@@ -41,6 +43,7 @@ import {
   guardians,
   grace_periods,
 } from "./mockData";
+import { buildChildQrPayload, buildVerificationLink } from "./qr";
 import { todayISO } from "./utils";
 
 const latency = () => 400 + Math.floor(Math.random() * 400);
@@ -48,6 +51,83 @@ const latency = () => 400 + Math.floor(Math.random() * 400);
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const uid = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
+
+function escapeSvgText(value: string) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function buildChildBadgeDataUrl(child: Child) {
+  const school = schools.find((entry) => entry.id === child.school_id);
+  const classRoom = classes.find((entry) => entry.id === child.class_id);
+  const payload = buildChildQrPayload(child);
+  const profileImage = child.profile_image_url || "/qr-placeholder.svg";
+  const schoolName = school?.name ?? "FeedClass School";
+  const className = classRoom?.name ?? "Class";
+  const safeName = escapeSvgText(child.full_name);
+  const safeStudentId = escapeSvgText(child.student_id);
+  const safeSchool = escapeSvgText(schoolName);
+  const safeClass = escapeSvgText(className);
+  const safePayload = escapeSvgText(payload);
+  const safeProfileImage = escapeSvgText(profileImage);
+
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="720" height="1080" viewBox="0 0 720 1080">
+      <defs>
+        <linearGradient id="badgeBg" x1="0%" x2="100%" y1="0%" y2="100%">
+          <stop offset="0%" stop-color="#f8fafc" />
+          <stop offset="100%" stop-color="#e2e8f0" />
+        </linearGradient>
+      </defs>
+      <rect width="720" height="1080" rx="44" fill="url(#badgeBg)" />
+      <rect x="36" y="36" width="648" height="1008" rx="36" fill="#ffffff" stroke="#cbd5e1" stroke-width="4" />
+      <text x="72" y="110" font-family="Arial, sans-serif" font-size="28" fill="#64748b" letter-spacing="3">FEEDCLASS QR BADGE</text>
+      <text x="72" y="160" font-family="Arial, sans-serif" font-size="38" font-weight="700" fill="#0f172a">${safeSchool}</text>
+      <image x="72" y="205" width="576" height="420" href="${safeProfileImage}" preserveAspectRatio="xMidYMid slice" />
+      <text x="72" y="695" font-family="Arial, sans-serif" font-size="46" font-weight="700" fill="#0f172a">${safeName}</text>
+      <text x="72" y="748" font-family="Arial, sans-serif" font-size="28" fill="#334155">Student ID: ${safeStudentId}</text>
+      <text x="72" y="790" font-family="Arial, sans-serif" font-size="24" fill="#64748b">Class: ${safeClass}</text>
+      <rect x="72" y="836" width="576" height="140" rx="28" fill="#0f172a" />
+      <text x="360" y="893" text-anchor="middle" font-family="Arial, sans-serif" font-size="26" fill="#cbd5e1">SCAN POINTER</text>
+      <text x="360" y="940" text-anchor="middle" font-family="Arial, sans-serif" font-size="34" font-weight="700" fill="#ffffff">${safePayload}</text>
+    </svg>
+  `;
+
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+function ensureChildQrBadge(child: Child): ChildQr {
+  const payload = buildChildQrPayload(child);
+  const badgeUrl = buildChildBadgeDataUrl(child);
+  const verificationLink = buildVerificationLink(payload);
+  const existing = child_qr.find((entry) => entry.child_id === child.id);
+
+  if (existing) {
+    existing.qr_payload = payload;
+    existing.qr_image_url = badgeUrl;
+    existing.verification_link = verificationLink;
+    return existing;
+  }
+
+  const nextQr = {
+    child_id: child.id,
+    qr_payload: payload,
+    qr_image_url: badgeUrl,
+    verification_link: verificationLink,
+  };
+  child_qr.push(nextQr);
+  return nextQr;
+}
+
+function syncChildQrBadges() {
+  children.forEach((child) => {
+    ensureChildQrBadge(child);
+  });
+}
 
 function syncExpiredSubscriptionPaymentIntents() {
   child_subscriptions
@@ -168,9 +248,68 @@ export async function updateChild(id: string, input: Partial<Child>) {
   const index = children.findIndex((entry) => entry.id === id);
   if (index >= 0) {
     children[index] = { ...children[index], ...input } as Child;
+    ensureChildQrBadge(children[index]);
     return children[index];
   }
   return null;
+}
+
+export async function updateGuardian(id: string, input: Partial<Guardian>) {
+  await wait(latency());
+  const index = guardians.findIndex((entry) => entry.id === id);
+  if (index >= 0) {
+    guardians[index] = { ...guardians[index], ...input } as Guardian;
+    return guardians[index];
+  }
+  return null;
+}
+
+export async function deleteChild(id: string) {
+  await wait(latency());
+  const childIndex = children.findIndex((entry) => entry.id === id);
+  if (childIndex === -1) {
+    return false;
+  }
+
+  const child = children[childIndex];
+  children.splice(childIndex, 1);
+
+  const guardianIndex = guardians.findIndex((entry) => entry.id === child.guardian_id);
+  if (guardianIndex >= 0) {
+    guardians.splice(guardianIndex, 1);
+  }
+
+  const qrIndex = child_qr.findIndex((entry) => entry.child_id === id);
+  if (qrIndex >= 0) {
+    child_qr.splice(qrIndex, 1);
+  }
+
+  for (let index = child_subscriptions.length - 1; index >= 0; index -= 1) {
+    if (child_subscriptions[index].child_id === id) {
+      child_subscriptions.splice(index, 1);
+    }
+  }
+
+  for (let index = payment_intents.length - 1; index >= 0; index -= 1) {
+    if (payment_intents[index].child_id === id) {
+      payment_intents.splice(index, 1);
+    }
+  }
+
+  for (let index = transactions.length - 1; index >= 0; index -= 1) {
+    if (transactions[index].child_id === id) {
+      transactions.splice(index, 1);
+    }
+  }
+
+  activity_logs.push({
+    id: uid("al"),
+    type: "DELETE",
+    message: `Deleted child ${child.full_name}`,
+    created_at: new Date().toISOString(),
+  });
+
+  return true;
 }
 
 export async function getChildById(id: string) {
@@ -180,7 +319,11 @@ export async function getChildById(id: string) {
 
 export async function getChildQr(childId: string) {
   await wait(latency());
-  return child_qr.find((qr) => qr.child_id === childId) || null;
+  const child = children.find((entry) => entry.id === childId);
+  if (!child) {
+    return null;
+  }
+  return ensureChildQrBadge(child);
 }
 
 export async function importChildrenCsv(csvText: string, schoolId: string, classId: string) {
@@ -214,11 +357,7 @@ export async function importChildrenCsv(csvText: string, schoolId: string, class
     };
 
     children.push(child);
-    child_qr.push({
-      child_id: child.id,
-      qr_payload: `SMMS-${child.student_id}`,
-      qr_image_url: "/qr-placeholder.svg",
-    });
+    ensureChildQrBadge(child);
 
     return child;
   });
@@ -231,6 +370,87 @@ export async function importChildrenCsv(csvText: string, schoolId: string, class
   });
 
   return parsed;
+}
+
+export async function createChildEnrollment(input: {
+  student_id: string;
+  full_name: string;
+  school_id: string;
+  class_id: string;
+  guardian_name: string;
+  guardian_phone: string;
+  preferred_channel?: "SMS" | "WHATSAPP" | "EMAIL";
+  profile_image_url?: string;
+  active?: boolean;
+}) {
+  await wait(latency());
+
+  const normalizedStudentId = input.student_id.trim().toUpperCase();
+  if (!normalizedStudentId || !input.full_name.trim() || !input.guardian_name.trim() || !input.guardian_phone.trim()) {
+    throw new Error("Student, guardian, and class details are required.");
+  }
+
+  const school = schools.find((entry) => entry.id === input.school_id);
+  if (!school) {
+    throw new Error("Select a valid school.");
+  }
+
+  const classRoom = classes.find(
+    (entry) => entry.id === input.class_id && entry.school_id === input.school_id
+  );
+  if (!classRoom) {
+    throw new Error("Select a valid class for the selected school.");
+  }
+
+  if (children.some((entry) => entry.student_id.toUpperCase() === normalizedStudentId)) {
+    throw new Error("Student ID already exists.");
+  }
+
+  const guardianId = uid("g");
+  const childId = uid("ch");
+
+  guardians.push({
+    id: guardianId,
+    name: input.guardian_name.trim(),
+    phone: input.guardian_phone.trim(),
+    preferred_channel: input.preferred_channel ?? "SMS",
+  });
+
+  const child: Child = {
+    id: childId,
+    student_id: normalizedStudentId,
+    school_id: input.school_id,
+    class_id: input.class_id,
+    full_name: input.full_name.trim(),
+    guardian_id: guardianId,
+    profile_image_url: input.profile_image_url?.trim() || undefined,
+    active: input.active !== false,
+  };
+
+  children.push(child);
+  ensureChildQrBadge(child);
+  child_subscriptions.push({
+    child_id: child.id,
+    status: "NONE",
+    start_date: todayISO(),
+    end_date: todayISO(),
+    meals_remaining: 0,
+    plan_id: subscription_plans[0]?.id ?? "plan-unassigned",
+  });
+  grace_periods.push({
+    child_id: child.id,
+    start_date: todayISO(),
+    days_used: 0,
+    notified: false,
+  });
+  activity_logs.push({
+    id: uid("al"),
+    type: "CREATE",
+    message: `Manually enrolled ${child.full_name} at ${school.name} / ${classRoom.name} with a 7-day grace period`,
+    created_at: new Date().toISOString(),
+  });
+
+  return child;
 }
 
 export async function getSubscriptionPlans() {
@@ -793,11 +1013,92 @@ export async function getAiSummary(): Promise<AiReport[]> {
 
 export async function generateBadgesPdf(classId: string) {
   await wait(latency());
-  return { url: `/mock-badges/${classId}.pdf`, created_at: new Date().toISOString() };
+  const classRoom = classes.find((entry) => entry.id === classId);
+  if (!classRoom) {
+    throw new Error("Class not found.");
+  }
+
+  const school = schools.find((entry) => entry.id === classRoom.school_id);
+  const badgeChildren = children.filter((child) => child.class_id === classId);
+
+  const badgeMarkup = badgeChildren
+    .map((child) => {
+      const qr = child_qr.find((entry) => entry.child_id === child.id);
+      return `
+        <article class="badge">
+          <div class="badge__school">${school?.name ?? "School"}</div>
+          <div class="badge__photo" style="background-image:url('${child.profile_image_url ?? "/qr-placeholder.svg"}')"></div>
+          <div class="badge__meta">
+            <h2>${child.full_name}</h2>
+            <p>${child.student_id}</p>
+            <p>${classRoom.name}</p>
+          </div>
+          <div class="badge__qr">
+            <div class="badge__qr-box">${qr?.qr_payload ?? buildChildQrPayload(child)}</div>
+            <p>${qr?.qr_payload ?? buildChildQrPayload(child)}</p>
+          </div>
+        </article>
+      `;
+    })
+    .join("");
+
+  const html = `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <title>${classRoom.name} badges</title>
+      <style>
+        body { font-family: Arial, sans-serif; margin: 24px; background: #f8fafc; color: #0f172a; }
+        .sheet-title { margin-bottom: 20px; }
+        .sheet-title h1 { margin: 0 0 6px; font-size: 24px; }
+        .sheet-title p { margin: 0; color: #475569; }
+        .sheet { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+        .badge { border: 2px solid #cbd5e1; border-radius: 24px; background: white; padding: 18px; display: grid; gap: 14px; }
+        .badge__school { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #64748b; }
+        .badge__photo { height: 220px; border-radius: 20px; background-size: cover; background-position: center; background-color: #e2e8f0; }
+        .badge__meta h2 { margin: 0 0 6px; font-size: 22px; }
+        .badge__meta p { margin: 0 0 4px; font-size: 14px; color: #475569; }
+        .badge__qr { border-top: 1px solid #e2e8f0; padding-top: 14px; }
+        .badge__qr-box {
+          min-height: 96px;
+          border: 1px dashed #94a3b8;
+          border-radius: 16px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 12px;
+          background: #f8fafc;
+          font-weight: 700;
+          text-align: center;
+        }
+        .badge__qr p { margin: 10px 0 0; font-size: 12px; color: #64748b; text-align: center; }
+        @media print {
+          body { margin: 12px; background: white; }
+          .sheet { gap: 14px; }
+          .badge { break-inside: avoid; }
+        }
+      </style>
+    </head>
+    <body>
+      <header class="sheet-title">
+        <h1>${school?.name ?? "School"} · ${classRoom.name}</h1>
+        <p>${badgeChildren.length} badge${badgeChildren.length === 1 ? "" : "s"} generated on ${new Date().toLocaleString()}</p>
+      </header>
+      <section class="sheet">${badgeMarkup || "<p>No children in this class.</p>"}</section>
+    </body>
+  </html>`;
+
+  const url = `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+  return {
+    url,
+    created_at: new Date().toISOString(),
+    file_name: `${(school?.name ?? "school").replace(/\s+/g, "-").toLowerCase()}-${classRoom.name.replace(/\s+/g, "-").toLowerCase()}-badges.html`,
+  };
 }
 
 export async function getAllData() {
   await wait(latency());
+  syncChildQrBadges();
   return {
     schools,
     classes,
@@ -806,6 +1107,7 @@ export async function getAllData() {
     school_staff,
     child_subscriptions,
     child_qr,
+    grace_periods,
     subscription_plans,
   } as const;
 }

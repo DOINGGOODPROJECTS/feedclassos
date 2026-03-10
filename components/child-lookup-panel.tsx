@@ -12,6 +12,7 @@ import { PaymentIntent, School, SupervisorChildLookupItem } from "@/lib/types";
 import { useAppStore } from "@/lib/store";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { QrCanvas } from "@/components/qr-canvas";
 import { Input } from "@/components/ui/input";
 import { DataTable } from "@/components/data-table";
 import { Button } from "@/components/ui/button";
@@ -204,9 +205,12 @@ export function ChildLookupPanel() {
                     <div
                       role="img"
                       aria-label={`${selectedLookupItem.child.full_name} QR badge`}
-                      className="h-20 w-20 rounded-2xl border border-slate-200 bg-white bg-contain bg-center bg-no-repeat p-2"
-                      style={{ backgroundImage: `url(${selectedLookupItem.qr?.qr_image_url ?? "/qr-placeholder.svg"})` }}
-                    />
+                      className="flex h-20 w-20 items-center justify-center rounded-2xl border border-slate-200 bg-white p-2"
+                    >
+                      {selectedLookupItem.qr?.qr_payload ? (
+                        <QrCanvas value={selectedLookupItem.qr.qr_payload} size={64} className="h-16 w-16" />
+                      ) : null}
+                    </div>
                     <div>
                       <p className="text-sm font-semibold text-slate-900">
                         {selectedLookupItem.qr?.qr_payload ?? "QR not generated"}

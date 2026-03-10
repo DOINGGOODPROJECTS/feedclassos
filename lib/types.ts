@@ -77,6 +77,7 @@ export interface ChildQr {
   child_id: string;
   qr_payload: string;
   qr_image_url: string;
+  verification_link: string;
 }
 
 export interface SubscriptionPlan {

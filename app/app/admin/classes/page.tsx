@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { createClass, getClasses, getSchools, updateClass } from "@/lib/mockApi";
@@ -9,7 +9,6 @@ import { ClassRoom, School } from "@/lib/types";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DataTable } from "@/components/data-table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
@@ -34,6 +33,10 @@ export default function AdminClassesPage() {
     resolver: zodResolver(schema),
     defaultValues: { name: "", grade: "", school_id: "" },
   });
+  const selectedSchoolId = useWatch({ control: form.control, name: "school_id" });
+
+  const selectClassName =
+    "flex h-10 w-full items-center rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300";
 
   useEffect(() => {
     getClasses().then(setClasses);
@@ -94,18 +97,18 @@ export default function AdminClassesPage() {
               </DialogHeader>
               <form className="mt-4 space-y-4" onSubmit={handleSubmit}>
                 <div>
-                  <Select value={form.watch("school_id")} onValueChange={(value) => form.setValue("school_id", value)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select school" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {schools.map((school) => (
-                        <SelectItem key={school.id} value={school.id}>
-                          {school.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <select
+                    className={selectClassName}
+                    value={selectedSchoolId}
+                    onChange={(event) => form.setValue("school_id", event.target.value, { shouldValidate: true })}
+                  >
+                    <option value="">Select school</option>
+                    {schools.map((school) => (
+                      <option key={school.id} value={school.id}>
+                        {school.name}
+                      </option>
+                    ))}
+                  </select>
                   {form.formState.errors.school_id && (
                     <p className="mt-1 text-xs text-red-600">
                       {form.formState.errors.school_id.message}
@@ -135,19 +138,18 @@ export default function AdminClassesPage() {
 
       <div className="rounded-3xl border border-slate-200 bg-white p-4 space-y-4">
         <div className="flex flex-wrap items-center gap-3">
-          <Select value={filterSchool} onValueChange={setFilterSchool}>
-            <SelectTrigger className="w-[220px]">
-              <SelectValue placeholder="Filter by school" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All schools</SelectItem>
-              {schools.map((school) => (
-                <SelectItem key={school.id} value={school.id}>
-                  {school.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <select
+            className={`${selectClassName} w-[220px]`}
+            value={filterSchool}
+            onChange={(event) => setFilterSchool(event.target.value)}
+          >
+            <option value="all">All schools</option>
+            {schools.map((school) => (
+              <option key={school.id} value={school.id}>
+                {school.name}
+              </option>
+            ))}
+          </select>
           <span className="text-sm text-slate-500">{filtered.length} classes</span>
         </div>
         <DataTable
