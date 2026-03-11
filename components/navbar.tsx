@@ -2,32 +2,24 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
-import { getSchools } from "@/lib/mockApi";
+import { useRouter } from "next/navigation";
+import { clearAuthTokens, getBackendSchools } from "@/lib/backendApi";
 import { School } from "@/lib/types";
 import { useAppStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 
 export function Navbar() {
   const router = useRouter();
-  const pathname = usePathname();
   const role = useAppStore((state) => state.role);
   const activeSchoolId = useAppStore((state) => state.activeSchoolId);
   const supervisorSchoolId = useAppStore((state) => state.supervisorSchoolId);
-  const setRole = useAppStore((state) => state.setRole);
   const setActiveSchoolId = useAppStore((state) => state.setActiveSchoolId);
   const [schools, setSchools] = useState<School[]>([]);
 
   useEffect(() => {
-    getSchools().then(setSchools);
+    getBackendSchools().then(setSchools).catch(() => setSchools([]));
   }, []);
 
   const supervisorSchool = schools.find((school) => school.id === supervisorSchoolId);
@@ -35,26 +27,6 @@ export function Navbar() {
     ADMIN: "Program Admin",
     SCHOOL_ADMIN: "School Admin",
     DONOR_READONLY: "Donor",
-  };
-
-  useEffect(() => {
-    document.cookie = `fc_role=${role}; path=/; max-age=31536000`;
-  }, [role]);
-
-  const handleRoleChange = (nextRole: "ADMIN" | "SCHOOL_ADMIN" | "DONOR_READONLY") => {
-    setRole(nextRole);
-    document.cookie = `fc_role=${nextRole}; path=/; max-age=31536000`;
-
-    const targetPath =
-      nextRole === "ADMIN"
-        ? "/app/admin/dashboard"
-        : nextRole === "DONOR_READONLY"
-          ? "/app/donor/dashboard"
-          : "/app/supervisor/home";
-
-    if (pathname !== targetPath) {
-      router.push(targetPath);
-    }
   };
 
   return (
@@ -98,20 +70,20 @@ export function Navbar() {
             <Badge variant="secondary">My School: {supervisorSchool.name}</Badge>
           )}
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="gap-2">
-                Role: {roleLabels[role]}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => handleRoleChange("ADMIN")}>Program Admin</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleRoleChange("SCHOOL_ADMIN")}>School Admin</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleRoleChange("DONOR_READONLY")}>
-                Donor
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Button variant="outline" className="gap-2" disabled>
+            Role: {roleLabels[role]}
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              clearAuthTokens();
+              window.localStorage.removeItem("fc_role");
+              document.cookie = "fc_role=; path=/; max-age=0";
+              router.push("/login");
+            }}
+          >
+            Logout
+          </Button>
         </div>
       </div>
     </header>

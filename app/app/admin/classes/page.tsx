@@ -4,7 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { createClass, getClasses, getSchools, updateClass } from "@/lib/mockApi";
+import {
+  createBackendClass,
+  getBackendClasses,
+  getBackendSchools,
+  updateBackendClass,
+} from "@/lib/backendApi";
 import { ClassRoom, School } from "@/lib/types";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -39,9 +44,15 @@ export default function AdminClassesPage() {
     "flex h-10 w-full items-center rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300";
 
   useEffect(() => {
-    getClasses().then(setClasses);
-    getSchools().then(setSchools);
-  }, []);
+    Promise.all([getBackendClasses(), getBackendSchools()])
+      .then(([classData, schoolData]) => {
+        setClasses(classData);
+        setSchools(schoolData);
+      })
+      .catch((error) => {
+        push({ title: "Failed to load classes", description: error.message, variant: "danger" });
+      });
+  }, [push]);
 
   const filtered = useMemo(() => {
     if (filterSchool === "all") return classes;
@@ -50,13 +61,13 @@ export default function AdminClassesPage() {
 
   const handleSubmit = form.handleSubmit(async (values) => {
     if (editing) {
-      const updated = await updateClass(editing.id, values);
+      const updated = await updateBackendClass(editing.id, values);
       if (updated) {
         setClasses((prev) => prev.map((entry) => (entry.id === updated.id ? updated : entry)));
         push({ title: "Class updated", description: updated.name, variant: "success" });
       }
     } else {
-      const created = await createClass(values);
+      const created = await createBackendClass(values);
       setClasses((prev) => [...prev, created]);
       push({ title: "Class created", description: created.name, variant: "success" });
     }

@@ -5,15 +5,18 @@ import { useParams, useRouter } from "next/navigation";
 import QRCode from "qrcode";
 import {
   createPaymentIntent,
-  deleteChild,
-  getAllData,
-  getChildById,
-  getChildQr,
   getLedger,
   getSubscriptionPlans,
-  updateChild,
-  updateGuardian,
 } from "@/lib/mockApi";
+import {
+  deleteBackendChild,
+  getBackendChildQr,
+  getBackendChildSubscription,
+  getBackendChildren,
+  getBackendClasses,
+  getBackendSchools,
+  updateBackendChildProfile,
+} from "@/lib/backendApi";
 import { Child, ChildQr, ChildSubscription, ClassRoom, Guardian, School, SubscriptionPlan, Transaction } from "@/lib/types";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -37,7 +40,9 @@ export default function ChildDetailClient() {
   const [subscription, setSubscription] = useState<ChildSubscription | null>(null);
   const [schools, setSchools] = useState<School[]>([]);
   const [classes, setClasses] = useState<ClassRoom[]>([]);
-  const [guardian, setGuardian] = useState<Guardian | null>(null);
+  const [, setGuardian] = useState<Guardian | null>(null);
+  const [qrRefreshNotice, setQrRefreshNotice] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({
     student_id: "",
     full_name: "",
@@ -50,33 +55,51 @@ export default function ChildDetailClient() {
   });
 
   useEffect(() => {
-    getChildById(childId).then(setChild);
-    getChildQr(childId).then(setQr);
     getSubscriptionPlans().then(setPlans);
     getLedger().then((entries) => setLedger(entries.filter((tx) => tx.child_id === childId)));
-    getAllData().then((data) => {
-      setSchools(data.schools);
-      setClasses(data.classes);
-      setSubscription(data.child_subscriptions.find((entry) => entry.child_id === childId) ?? null);
-      const nextChild = data.children.find((entry) => entry.id === childId) ?? null;
-      const nextGuardian = nextChild
-        ? data.guardians.find((entry) => entry.id === nextChild.guardian_id) ?? null
-        : null;
-      setGuardian(nextGuardian);
-      if (nextChild) {
-        setForm({
-          student_id: nextChild.student_id,
-          full_name: nextChild.full_name,
-          school_id: nextChild.school_id,
-          class_id: nextChild.class_id,
-          guardian_name: nextGuardian?.name ?? "",
-          guardian_phone: nextGuardian?.phone ?? "",
-          profile_image_url: nextChild.profile_image_url ?? "",
-          active: nextChild.active,
+    Promise.all([
+      getBackendChildren(),
+      getBackendSchools(),
+      getBackendClasses(),
+      getBackendChildQr(childId).catch(() => null),
+      getBackendChildSubscription(childId).catch(() => null),
+    ])
+      .then(([childData, schoolData, classData, childQr, childSubscription]) => {
+        const nextChild = childData.children.find((entry) => entry.id === childId) ?? null;
+        const nextGuardian = nextChild
+          ? childData.guardians.find((entry) => entry.id === nextChild.guardian_id) ?? null
+          : null;
+
+        setChild(nextChild);
+        setGuardian(nextGuardian);
+        setQr(childQr);
+        setSchools(schoolData);
+        setClasses(classData);
+        setSubscription(childSubscription);
+
+        if (nextChild) {
+          setForm({
+            student_id: nextChild.student_id,
+            full_name: nextChild.full_name,
+            school_id: nextChild.school_id,
+            class_id: nextChild.class_id,
+            guardian_name: nextGuardian?.name ?? "",
+            guardian_phone: nextGuardian?.phone ?? "",
+            profile_image_url: nextChild.profile_image_url ?? "",
+            active: nextChild.active,
+          });
+        }
+        setLoading(false);
+      })
+      .catch((error) => {
+        push({
+          title: "Failed to load child",
+          description: error instanceof Error ? error.message : "Unable to load child profile.",
+          variant: "danger",
         });
-      }
-    });
-  }, [childId]);
+        setLoading(false);
+      });
+  }, [childId, push]);
 
   const filteredClasses = useMemo(
     () => classes.filter((entry) => !form.school_id || entry.school_id === form.school_id),
@@ -104,29 +127,39 @@ export default function ChildDetailClient() {
       return;
     }
 
-    const updatedChild = await updateChild(child.id, {
+    const previousVerificationCode = qr?.qr_payload ?? buildChildQrPayload(child);
+
+    const updated = await updateBackendChildProfile(child.id, {
       student_id: form.student_id.trim().toUpperCase(),
       full_name: form.full_name.trim(),
       school_id: form.school_id,
       class_id: form.class_id,
+      guardian_name: form.guardian_name.trim(),
+      guardian_phone: form.guardian_phone.trim(),
       profile_image_url: form.profile_image_url,
       active: form.active,
     });
-    if (!updatedChild) {
+    if (!updated.child) {
       push({ title: "Update failed", description: "Unable to update child.", variant: "danger" });
       return;
     }
 
-    if (guardian) {
-      const updatedGuardian = await updateGuardian(guardian.id, {
-        name: form.guardian_name.trim(),
-        phone: form.guardian_phone.trim(),
-      });
-      setGuardian(updatedGuardian);
+    const refreshedQr = await getBackendChildQr(child.id);
+
+    setChild(updated.child);
+    setGuardian(updated.guardian);
+    setQr(refreshedQr);
+
+    const nextVerificationCode = refreshedQr?.qr_payload ?? buildChildQrPayload(updated.child);
+    if (nextVerificationCode !== previousVerificationCode) {
+      const message = "Verification code changed. Reprint the QR badge before using it again.";
+      setQrRefreshNotice(message);
+      push({ title: "Child updated", description: message, variant: "success" });
+      return;
     }
 
-    setChild(updatedChild);
-    push({ title: "Child updated", description: updatedChild.full_name, variant: "success" });
+    setQrRefreshNotice(null);
+    push({ title: "Child updated", description: updated.child.full_name, variant: "success" });
   };
 
   const handleDelete = async () => {
@@ -139,7 +172,7 @@ export default function ChildDetailClient() {
       return;
     }
 
-    const deleted = await deleteChild(child.id);
+    const deleted = await deleteBackendChild(child.id);
     if (!deleted) {
       push({ title: "Delete failed", description: "Unable to delete child.", variant: "danger" });
       return;
@@ -252,8 +285,12 @@ export default function ChildDetailClient() {
     }
   };
 
-  if (!child) {
+  if (loading) {
     return <div className="text-sm text-slate-500">Loading child profile...</div>;
+  }
+
+  if (!child) {
+    return <div className="text-sm text-slate-500">Child not found.</div>;
   }
 
   const activePlan = plans.find((plan) => plan.active) ?? plans[0];
@@ -392,6 +429,15 @@ export default function ChildDetailClient() {
                     {verificationCode}
                   </p>
                 </div>
+                {qrRefreshNotice ? (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    {qrRefreshNotice}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                    Reprint the QR badge any time you modify the child data.
+                  </div>
+                )}
                 <div className="flex justify-center">
                   <Button variant="outline" onClick={handlePrintQrBadge}>
                     Print QR badge
@@ -417,13 +463,30 @@ export default function ChildDetailClient() {
                   <p className="text-sm text-slate-500">Current status</p>
                   <p className="text-lg font-semibold text-slate-900">{subscription.status}</p>
                 </div>
+                {subscription.plan_name ? (
+                  <div>
+                    <p className="text-sm text-slate-500">Plan</p>
+                    <p className="text-base font-semibold text-slate-900">{subscription.plan_name}</p>
+                  </div>
+                ) : null}
                 <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
                   <span className="text-xs text-slate-500">Meals remaining</span>
                   <span className="text-sm font-semibold text-slate-800">{subscription.meals_remaining}</span>
                 </div>
+                {subscription.meal_type ? (
+                  <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
+                    <span className="text-xs text-slate-500">Meal type</span>
+                    <span className="text-sm font-semibold text-slate-800">{subscription.meal_type}</span>
+                  </div>
+                ) : null}
                 <div className="text-xs text-slate-500">
                   {subscription.start_date} → {subscription.end_date}
                 </div>
+                {subscription.cancellation_reason ? (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                    Cancellation reason: {subscription.cancellation_reason}
+                  </div>
+                ) : null}
               </div>
             ) : (
               <p className="text-sm text-slate-500">No active subscription.</p>

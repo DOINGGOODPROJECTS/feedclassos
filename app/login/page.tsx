@@ -7,17 +7,36 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
+import { storeAuthTokens } from "@/lib/backendApi";
 import { useAppStore } from "@/lib/store";
 import { Role } from "@/lib/types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
+const demoAccounts = [
+  { label: "Program Admin", email: "admin@feedclass.test", password: "password123" },
+  { label: "School Admin / Supervisor", email: "supervisor@feedclass.test", password: "password123" },
+  { label: "Donor", email: "donor@feedclass.test", password: "password123" },
+];
+
+function mapBackendRole(role: string): Role {
+  if (role === "SUPERVISOR") {
+    return "SCHOOL_ADMIN";
+  }
+
+  if (role === "ADMIN" || role === "DONOR_READONLY" || role === "SCHOOL_ADMIN") {
+    return role;
+  }
+
+  return "ADMIN";
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const { push } = useToast();
   const setRole = useAppStore((state) => state.setRole);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState(demoAccounts[0].email);
+  const [password, setPassword] = useState(demoAccounts[0].password);
   const [submitting, setSubmitting] = useState(false);
 
   return (
@@ -43,16 +62,23 @@ export default function LoginPage() {
             </p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
-            {[
-              { label: "Program Admin", email: "admin@feedclass.test" },
-              { label: "School Admin", email: "schooladmin@feedclass.test" },
-              { label: "Donor", email: "donor@feedclass.test" },
-            ].map((entry) => (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {demoAccounts.map((entry) => (
               <div key={entry.email} className="rounded-3xl border border-amber-100 bg-white/80 p-4 shadow-sm">
                 <p className="text-xs uppercase tracking-[0.2em] text-amber-700">{entry.label}</p>
                 <p className="mt-2 text-sm font-semibold text-slate-900">{entry.email}</p>
-                <p className="text-xs text-slate-500">Password: `password123`</p>
+                <p className="text-xs text-slate-500">Temporary password: {entry.password}</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="mt-3 w-full"
+                  onClick={() => {
+                    setEmail(entry.email);
+                    setPassword(entry.password);
+                  }}
+                >
+                  Use these details
+                </Button>
               </div>
             ))}
           </div>
@@ -118,7 +144,8 @@ export default function LoginPage() {
                     return;
                   }
 
-                  setRole(payload.user.role as Role);
+                  setRole(mapBackendRole(payload.user.role));
+                  storeAuthTokens(payload.accessToken, payload.refreshToken);
                   push({
                     title: "Login successful",
                     description: `Signed in as ${payload.user.name}.`,

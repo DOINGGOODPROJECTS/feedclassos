@@ -36,7 +36,7 @@ export default function Home() {
           </nav>
           <div className="flex items-center gap-3">
             <Link
-              href="/app"
+              href="/login"
               className="hidden items-center justify-center rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white md:inline-flex"
             >
               Launch App
@@ -66,7 +66,7 @@ export default function Home() {
                 </Link>
               ))}
               <Link
-                href="/app"
+                href="/login"
                 className="inline-flex items-center justify-center rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
               >
                 Launch App
@@ -102,7 +102,7 @@ export default function Home() {
               </p>
               <div className="flex flex-wrap items-center gap-3">
                 <Link
-                  href="/app"
+                  href="/login"
                   className="inline-flex items-center justify-center rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white"
                 >
                   Launch FeedClass App

@@ -4,7 +4,7 @@ export type SchoolStaffRole = "SUPERVISOR";
 
 export type MealType = "BREAKFAST" | "LUNCH" | "DINNER";
 
-export type SubscriptionStatus = "ACTIVE" | "EXPIRED" | "PAUSED" | "NONE";
+export type SubscriptionStatus = "ACTIVE" | "EXPIRED" | "CANCELLED" | "PAUSED" | "NONE" | "GRACE_PERIOD";
 
 export type TransactionType =
   | "SUBSCRIPTION_PURCHASE"
@@ -71,6 +71,8 @@ export interface Child {
   guardian_id: string;
   profile_image_url?: string;
   active: boolean;
+  subscription_status?: "ACTIVE" | "EXPIRED" | "PAUSED" | "NONE" | "GRACE_PERIOD";
+  grace_period_ends_at?: string;
 }
 
 export interface ChildQr {
@@ -87,6 +89,8 @@ export interface SubscriptionPlan {
   meals_per_cycle: number;
   price: number;
   active: boolean;
+  effective_start_date?: string | null;
+  effective_end_date?: string | null;
 }
 
 export interface ChildSubscription {
@@ -95,7 +99,11 @@ export interface ChildSubscription {
   start_date: string;
   end_date: string;
   meals_remaining: number;
-  plan_id: string;
+  meal_type?: MealType | null;
+  plan_id: string | null;
+  plan_name?: string | null;
+  cancelled_at?: string | null;
+  cancellation_reason?: string | null;
 }
 
 export interface Transaction {

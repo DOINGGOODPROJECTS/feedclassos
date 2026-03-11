@@ -9,8 +9,21 @@ function mixHash(seed: number, value: string) {
   return hash >>> 0;
 }
 
-export function buildChildQrPayload(child: Pick<Child, "id" | "school_id" | "class_id" | "student_id">) {
-  const source = [child.id, child.school_id, child.class_id, child.student_id].join("|");
+export function buildChildQrPayload(
+  child: Pick<
+    Child,
+    "id" | "school_id" | "class_id" | "student_id" | "full_name" | "profile_image_url" | "active"
+  >
+) {
+  const source = [
+    child.id,
+    child.school_id,
+    child.class_id,
+    child.student_id,
+    child.full_name,
+    child.profile_image_url ?? "",
+    String(child.active),
+  ].join("|");
   let state = 2166136261;
   const chunks: string[] = [];
 

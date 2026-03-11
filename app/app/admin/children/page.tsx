@@ -2,7 +2,12 @@
 
 import { type ChangeEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { createChildEnrollment, getAllData, importChildrenCsv } from "@/lib/mockApi";
+import {
+  createBackendChildEnrollment,
+  getBackendChildren,
+  getBackendClasses,
+  getBackendSchools,
+} from "@/lib/backendApi";
 import { Child, ChildSubscription, ClassRoom, GracePeriod, Guardian, School } from "@/lib/types";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -38,16 +43,21 @@ export default function AdminChildrenPage() {
   });
 
   useEffect(() => {
-    getAllData().then((data) => {
-      setChildren(data.children);
-      setSchools(data.schools);
-      setClasses(data.classes);
-      setGuardians(data.guardians);
-      setSubscriptions(data.child_subscriptions);
-      setGracePeriods(data.grace_periods);
-      setLoading(false);
-    });
-  }, []);
+    Promise.all([getBackendChildren(), getBackendSchools(), getBackendClasses()])
+      .then(([childData, schoolData, classData]) => {
+        setChildren(childData.children);
+        setSchools(schoolData);
+        setClasses(classData);
+        setGuardians(childData.guardians);
+        setSubscriptions([]);
+        setGracePeriods([]);
+        setLoading(false);
+      })
+      .catch((error) => {
+        push({ title: "Failed to load children", description: error.message, variant: "danger" });
+        setLoading(false);
+      });
+  }, [push]);
 
   const filtered = useMemo(() => {
     return children.filter((child) =>
@@ -86,15 +96,11 @@ export default function AdminChildrenPage() {
   };
 
   const handleImport = async () => {
-    if (!importSchool || !importClass) {
-      push({ title: "Select school + class", description: "Choose a context before importing.", variant: "danger" });
-      return;
-    }
-    const imported = await importChildrenCsv(csvText, importSchool, importClass);
-    setChildren((prev) => [...prev, ...imported]);
-    setCsvText("");
-    setPreview([]);
-    push({ title: "Import complete", description: `${imported.length} children added.`, variant: "success" });
+    push({
+      title: "CSV import not wired",
+      description: "Manual enrollment is connected to the backend. CSV import still needs backend integration.",
+      variant: "danger",
+    });
   };
 
   const handleDownloadTemplate = () => {
@@ -115,16 +121,16 @@ export default function AdminChildrenPage() {
 
   const handleManualEnrollment = async () => {
     try {
-      const created = await createChildEnrollment(manualForm);
-      const refreshed = await getAllData();
+      const created = await createBackendChildEnrollment(manualForm);
+      const refreshed = await getBackendChildren();
       setChildren(refreshed.children);
       setGuardians(refreshed.guardians);
-      setSubscriptions(refreshed.child_subscriptions);
-      setGracePeriods(refreshed.grace_periods);
+      setSubscriptions([]);
+      setGracePeriods([]);
       resetManualForm();
       push({
         title: "Child enrolled",
-        description: `${created.full_name} was added successfully.`,
+        description: `${created.child.full_name} was added successfully.`,
         variant: "success",
       });
     } catch (error) {
@@ -247,6 +253,21 @@ export default function AdminChildrenPage() {
                       if (subscription?.status && subscription.status !== "NONE") {
                         return subscription.status;
                       }
+                      if (row.subscription_status === "GRACE_PERIOD") {
+                        if (row.grace_period_ends_at) {
+                          const daysRemaining = Math.max(
+                            0,
+                            Math.ceil(
+                              (new Date(row.grace_period_ends_at).getTime() - Date.now()) / 86400000
+                            )
+                          );
+                          return `GRACE PERIOD (${daysRemaining} days left)`;
+                        }
+                        return "GRACE PERIOD";
+                      }
+                      if (row.subscription_status && row.subscription_status !== "NONE") {
+                        return row.subscription_status;
+                      }
                       if (grace?.active) {
                         return `GRACE PERIOD (${grace.daysRemaining} days left)`;
                       }
@@ -260,6 +281,9 @@ export default function AdminChildrenPage() {
                       const grace = getGraceSummary(row.id);
                       if (subscription && subscription.status === "ACTIVE") {
                         return subscription.meals_remaining;
+                      }
+                      if (row.subscription_status === "GRACE_PERIOD") {
+                        return "Free meal window";
                       }
                       if (grace?.active) {
                         return `Free meal window`;

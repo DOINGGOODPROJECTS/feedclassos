@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { getSchools, createSchool, updateSchool } from "@/lib/mockApi";
+import { createBackendSchool, getBackendSchools, updateBackendSchool } from "@/lib/backendApi";
 import { School } from "@/lib/types";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -37,11 +37,16 @@ export default function AdminSchoolsPage() {
   });
 
   useEffect(() => {
-    getSchools().then((data) => {
-      setSchools(data);
-      setLoading(false);
-    });
-  }, []);
+    getBackendSchools()
+      .then((data) => {
+        setSchools(data);
+        setLoading(false);
+      })
+      .catch((error) => {
+        push({ title: "Failed to load schools", description: error.message, variant: "danger" });
+        setLoading(false);
+      });
+  }, [push]);
 
   const filtered = useMemo(() => {
     return schools.filter((school) =>
@@ -51,13 +56,13 @@ export default function AdminSchoolsPage() {
 
   const handleSubmit = form.handleSubmit(async (values) => {
     if (editing) {
-      const updated = await updateSchool(editing.id, values);
+      const updated = await updateBackendSchool(editing.id, values);
       if (updated) {
         setSchools((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
         push({ title: "School updated", description: updated.name, variant: "success" });
       }
     } else {
-      const created = await createSchool(values);
+      const created = await createBackendSchool(values);
       setSchools((prev) => [...prev, created]);
       push({ title: "School created", description: created.name, variant: "success" });
     }
