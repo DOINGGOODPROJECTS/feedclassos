@@ -1,4 +1,4 @@
-import { Child, ChildQr, ChildSubscription, ClassRoom, Guardian, School, SubscriptionPlan } from "./types";
+import { Child, ChildQr, ChildSubscription, ClassRoom, Guardian, PaymentIntent, School, SubscriptionPlan } from "./types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -74,6 +74,17 @@ type BackendChildSubscription = {
   cancelled_at?: string | null;
   cancellationReason?: string | null;
   cancellation_reason?: string | null;
+};
+
+type BackendPaymentIntent = {
+  id: string;
+  child_id: string;
+  plan_id: string;
+  amount: number;
+  reference: string;
+  status: "PENDING" | "PAID" | "FAILED";
+  payment_url: string;
+  created_at: string;
 };
 
 function isValidChildRow(entry: Partial<BackendChildRow>) {
@@ -273,6 +284,19 @@ function mapChildSubscription(entry: BackendChildSubscription): ChildSubscriptio
   };
 }
 
+function mapPaymentIntent(entry: BackendPaymentIntent): PaymentIntent {
+  return {
+    id: entry.id,
+    child_id: entry.child_id,
+    plan_id: entry.plan_id,
+    amount: Number(entry.amount || 0),
+    reference: entry.reference,
+    status: entry.status,
+    payment_url: entry.payment_url,
+    created_at: entry.created_at,
+  };
+}
+
 export async function getBackendSchools() {
   const payload = await fetchJson<{ schools: BackendSchool[] }>("/schools");
   return payload.schools.map(mapSchool);
@@ -452,6 +476,42 @@ export async function getBackendDashboardKpis() {
 export async function getBackendSubscriptionPlans() {
   const payload = await fetchJson<{ plans: BackendPlan[] }>("/plans");
   return payload.plans.map(mapPlan);
+}
+
+export async function getBackendPaymentIntents(schoolId?: string) {
+  const query = schoolId ? `?school_id=${encodeURIComponent(schoolId)}` : "";
+  const payload = await fetchJson<{ intents: BackendPaymentIntent[] }>(`/payment-intents${query}`);
+  return payload.intents.map(mapPaymentIntent);
+}
+
+export async function createBackendPaymentIntent(input: { child_id: string; plan_id: string }) {
+  const payload = await fetchJson<{ intent: BackendPaymentIntent }>(`/payment-intents`, {
+    method: "POST",
+    body: JSON.stringify({
+      childId: input.child_id,
+      planId: input.plan_id,
+    }),
+  });
+
+  return mapPaymentIntent(payload.intent);
+}
+
+export async function sendBackendPaymentLink(intentId: string) {
+  const payload = await fetchJson<{
+    intent: BackendPaymentIntent;
+    channel: "SMS";
+    recipient: string;
+    providerReference?: string | null;
+  }>(`/payment-intents/${encodeURIComponent(intentId)}/send-link`, {
+    method: "POST",
+  });
+
+  return {
+    intent: mapPaymentIntent(payload.intent),
+    channel: payload.channel,
+    recipient: payload.recipient,
+    providerReference: payload.providerReference || null,
+  };
 }
 
 export async function createBackendSubscriptionPlan(input: Omit<SubscriptionPlan, "id">) {

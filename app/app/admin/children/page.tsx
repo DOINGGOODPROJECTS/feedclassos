@@ -4,9 +4,12 @@ import { type ChangeEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   createBackendChildEnrollment,
+  createBackendPaymentIntent,
   getBackendChildren,
   getBackendClasses,
   getBackendSchools,
+  getBackendSubscriptionPlans,
+  sendBackendPaymentLink,
 } from "@/lib/backendApi";
 import { Child, ChildSubscription, ClassRoom, GracePeriod, Guardian, School } from "@/lib/types";
 import { PageHeader } from "@/components/page-header";
@@ -93,6 +96,32 @@ export default function AdminChildrenPage() {
       .filter(Boolean);
     const data = lines.map((line) => line.split(",").map((item) => item.trim()));
     setPreview(data);
+  };
+
+  const handleSendPaymentLink = async (child: Child) => {
+    try {
+      const plans = await getBackendSubscriptionPlans();
+      const plan = plans.find((entry) => entry.active) ?? plans[0];
+      if (!plan) {
+        throw new Error("No subscription plan is available.");
+      }
+
+      const intent = await createBackendPaymentIntent({
+        child_id: child.id,
+        plan_id: plan.id,
+      });
+      const result = await sendBackendPaymentLink(intent.id);
+      push({
+        title: "Payment link sent",
+        description: `${child.full_name} guardian notified via ${result.channel}.`,
+      });
+    } catch (error) {
+      push({
+        title: "Send failed",
+        description: error instanceof Error ? error.message : "Unable to send payment link.",
+        variant: "danger",
+      });
+    }
   };
 
   const handleImport = async () => {
@@ -301,12 +330,7 @@ export default function AdminChildrenPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() =>
-                            push({
-                              title: "Payment link sent",
-                              description: `Sent to guardian of ${row.full_name}.`,
-                            })
-                          }
+                          onClick={() => handleSendPaymentLink(row)}
                         >
                           Send payment link
                         </Button>

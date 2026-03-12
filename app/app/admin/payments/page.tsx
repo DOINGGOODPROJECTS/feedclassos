@@ -2,11 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  getClasses,
-  getAllData,
-  getPaymentIntents,
-  sendPaymentLinkToGuardian,
-} from "@/lib/mockApi";
+  createBackendPaymentIntent,
+  getBackendChildren,
+  getBackendClasses,
+  getBackendPaymentIntents,
+  getBackendSchools,
+  getBackendSubscriptionPlans,
+  sendBackendPaymentLink,
+} from "@/lib/backendApi";
 import { Child, ClassRoom, Guardian, PaymentIntent, School, SubscriptionPlan } from "@/lib/types";
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/data-table";
@@ -26,13 +29,19 @@ export default function AdminPaymentsPage() {
   const [classId, setClassId] = useState<string>("ALL");
 
   useEffect(() => {
-    getPaymentIntents().then(setIntents);
-    getClasses().then(setClasses);
-    getAllData().then((data) => {
-      setChildren(data.children);
-      setGuardians(data.guardians);
-      setPlans(data.subscription_plans);
-      setSchools(data.schools);
+    Promise.all([
+      getBackendPaymentIntents(),
+      getBackendClasses(),
+      getBackendChildren(),
+      getBackendSubscriptionPlans(),
+      getBackendSchools(),
+    ]).then(([intentData, classData, childData, planData, schoolData]) => {
+      setIntents(intentData);
+      setClasses(classData);
+      setChildren(childData.children);
+      setGuardians(childData.guardians);
+      setPlans(planData);
+      setSchools(schoolData);
     });
   }, []);
 
@@ -41,20 +50,27 @@ export default function AdminPaymentsPage() {
     if (!child) {
       return;
     }
-    const result = await sendPaymentLinkToGuardian(child.id, intent.plan_id);
-    if (!result) {
-      push({ title: "Send failed", description: "Could not send payment link.", variant: "danger" });
-      return;
+    try {
+      const ensuredIntent = intent.id
+        ? intent
+        : await createBackendPaymentIntent({ child_id: child.id, plan_id: intent.plan_id });
+      const result = await sendBackendPaymentLink(ensuredIntent.id);
+      setIntents((prev) => {
+        const remaining = prev.filter((entry) => entry.id !== result.intent.id);
+        return [...remaining, result.intent];
+      });
+      push({
+        title: "Payment link sent",
+        description: `${child.full_name} guardian notified via ${result.channel}.`,
+        variant: "success",
+      });
+    } catch (error) {
+      push({
+        title: "Send failed",
+        description: error instanceof Error ? error.message : "Could not send payment link.",
+        variant: "danger",
+      });
     }
-    setIntents((prev) => {
-      const remaining = prev.filter((entry) => entry.id !== result.intent.id);
-      return [...remaining, result.intent];
-    });
-    push({
-      title: "Payment link sent",
-      description: `${child.full_name} guardian notified via ${result.channel}.`,
-      variant: "success",
-    });
   };
 
   const visibleClasses = useMemo(

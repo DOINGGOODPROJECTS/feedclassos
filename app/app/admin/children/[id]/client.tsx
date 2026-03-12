@@ -3,12 +3,9 @@
 import { type ChangeEvent, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import QRCode from "qrcode";
+import { getLedger, getSubscriptionPlans } from "@/lib/mockApi";
 import {
-  createPaymentIntent,
-  getLedger,
-  getSubscriptionPlans,
-} from "@/lib/mockApi";
-import {
+  createBackendPaymentIntent,
   deleteBackendChild,
   getBackendChildQr,
   getBackendChildSubscription,
@@ -501,7 +498,7 @@ export default function ChildDetailClient() {
             <Button
               onClick={async () => {
                 if (!activePlan) return;
-                await createPaymentIntent(childId, activePlan.id);
+                await createBackendPaymentIntent({ child_id: childId, plan_id: activePlan.id });
                 push({ title: "Payment intent created", description: activePlan.name, variant: "success" });
               }}
             >
