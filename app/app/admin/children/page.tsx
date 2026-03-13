@@ -3,15 +3,18 @@
 import { type ChangeEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  cancelBackendChildSubscription,
   createBackendChildEnrollment,
   createBackendPaymentIntent,
   getBackendChildren,
   getBackendClasses,
   getBackendSchools,
   getBackendSubscriptionPlans,
+  manuallyAttachBackendChildSubscription,
+  resetBackendChildMealServiceForTest,
   sendBackendPaymentLink,
 } from "@/lib/backendApi";
-import { Child, ChildSubscription, ClassRoom, GracePeriod, Guardian, School } from "@/lib/types";
+import { Child, ChildSubscription, ClassRoom, GracePeriod, Guardian, School, SubscriptionPlan } from "@/lib/types";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/data-table";
@@ -29,6 +32,7 @@ export default function AdminChildrenPage() {
   const [guardians, setGuardians] = useState<Guardian[]>([]);
   const [subscriptions, setSubscriptions] = useState<ChildSubscription[]>([]);
   const [gracePeriods, setGracePeriods] = useState<GracePeriod[]>([]);
+  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [csvText, setCsvText] = useState("");
@@ -44,16 +48,30 @@ export default function AdminChildrenPage() {
     guardian_phone: "",
     profile_image_url: "",
   });
+  const [attachForm, setAttachForm] = useState({
+    child_id: "",
+    plan_id: "",
+    target_status: "ACTIVE" as "ACTIVE" | "GRACE_PERIOD" | "CANCELLED",
+  });
+  const [attaching, setAttaching] = useState(false);
+  const [resettingMealService, setResettingMealService] = useState(false);
 
   useEffect(() => {
-    Promise.all([getBackendChildren(), getBackendSchools(), getBackendClasses()])
-      .then(([childData, schoolData, classData]) => {
+    Promise.all([getBackendChildren(), getBackendSchools(), getBackendClasses(), getBackendSubscriptionPlans()])
+      .then(([childData, schoolData, classData, planData]) => {
         setChildren(childData.children);
         setSchools(schoolData);
         setClasses(classData);
         setGuardians(childData.guardians);
+        setPlans(planData);
         setSubscriptions([]);
         setGracePeriods([]);
+      setAttachForm((current) => ({
+        ...current,
+        child_id: childData.children[0]?.id || "",
+        plan_id: planData.find((entry) => entry.active)?.id || planData[0]?.id || "",
+        target_status: current.target_status || "ACTIVE",
+      }));
         setLoading(false);
       })
       .catch((error) => {
@@ -171,6 +189,117 @@ export default function AdminChildrenPage() {
     }
   };
 
+  const handleManualAttachSubscription = async () => {
+    if (!attachForm.child_id) {
+      push({ title: "Child required", description: "Select a child first.", variant: "danger" });
+      return;
+    }
+    if (attachForm.target_status === "ACTIVE" && !attachForm.plan_id) {
+      push({ title: "Plan required", description: "Select a subscription plan.", variant: "danger" });
+      return;
+    }
+    try {
+      setAttaching(true);
+      if (attachForm.target_status === "ACTIVE") {
+        const subscription = await manuallyAttachBackendChildSubscription({
+          childId: attachForm.child_id,
+          planId: attachForm.plan_id,
+          reason: "Manual admin attach",
+        });
+        const refreshed = await getBackendChildren();
+        setChildren(refreshed.children);
+        setGuardians(refreshed.guardians);
+        push({
+          title: "Subscription attached",
+          description: `${subscription.plan_name ?? "Selected plan"} attached manually.`,
+          variant: "success",
+        });
+        return;
+      }
+
+      await cancelBackendChildSubscription({
+        childId: attachForm.child_id,
+        reason:
+          attachForm.target_status === "GRACE_PERIOD"
+            ? "Admin restored grace period"
+            : "Admin cancelled subscription",
+        nextStatus: attachForm.target_status,
+      });
+
+      const nextGracePeriodEndsAt =
+        attachForm.target_status === "GRACE_PERIOD"
+          ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+          : undefined;
+
+      setChildren((current) =>
+        current.map((child) =>
+          child.id === attachForm.child_id
+            ? {
+                ...child,
+                subscription_status: attachForm.target_status,
+                grace_period_ends_at: nextGracePeriodEndsAt,
+              }
+            : child
+        )
+      );
+      push({
+        title: "Subscription updated",
+        description:
+          attachForm.target_status === "GRACE_PERIOD"
+            ? "The child has been returned to grace period."
+            : "The child subscription has been cancelled.",
+        variant: "success",
+      });
+    } catch (error) {
+      push({
+        title: "Subscription update failed",
+        description: error instanceof Error ? error.message : "Unable to update subscription.",
+        variant: "danger",
+      });
+    } finally {
+      setAttaching(false);
+    }
+  };
+
+  const handleResetMealScanForTest = async () => {
+    if (!attachForm.child_id) {
+      push({ title: "Child required", description: "Select a child first.", variant: "danger" });
+      return;
+    }
+
+    const selectedChild = children.find((child) => child.id === attachForm.child_id);
+    const confirmed = window.confirm(
+      `Reset today's served meal record for ${selectedChild?.full_name || "this child"} for testing?`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setResettingMealService(true);
+      const result = await resetBackendChildMealServiceForTest({ childId: attachForm.child_id });
+      const refreshed = await getBackendChildren();
+      setChildren(refreshed.children);
+      setGuardians(refreshed.guardians);
+      push({
+        title: "Today's meal scan reset",
+        description:
+          result.resetCount > 0
+            ? `Cleared ${result.resetCount} served meal record(s) and restored ${result.restoredMeals} meal(s).`
+            : "No approved meal scan was found for today.",
+        variant: "success",
+      });
+    } catch (error) {
+      push({
+        title: "Reset failed",
+        description: error instanceof Error ? error.message : "Unable to reset today's meal scan.",
+        variant: "danger",
+      });
+    } finally {
+      setResettingMealService(false);
+    }
+  };
+
   const handleProfileImageChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) {
@@ -206,6 +335,27 @@ export default function AdminChildrenPage() {
       ...grace,
       daysRemaining,
       active: diffDays >= 0 && diffDays < 7 && grace.days_used < 7,
+    };
+  };
+
+  const getInlineGraceFromChild = (child: Child) => {
+    if (!child.grace_period_ends_at) {
+      return null;
+    }
+
+    const endsAt = new Date(child.grace_period_ends_at);
+    if (Number.isNaN(endsAt.getTime())) {
+      return null;
+    }
+
+    const msRemaining = endsAt.getTime() - Date.now();
+    if (msRemaining <= 0) {
+      return null;
+    }
+
+    return {
+      active: true,
+      daysRemaining: Math.max(0, Math.ceil(msRemaining / 86400000)),
     };
   };
 
@@ -278,27 +428,18 @@ export default function AdminChildrenPage() {
                     header: "Subscription",
                     render: (row: Child) => {
                       const subscription = subscriptions.find((sub) => sub.child_id === row.id);
-                      const grace = getGraceSummary(row.id);
+                      const grace = getGraceSummary(row.id) ?? getInlineGraceFromChild(row);
                       if (subscription?.status && subscription.status !== "NONE") {
                         return subscription.status;
                       }
+                      if (grace?.active) {
+                        return `GRACE PERIOD (${grace.daysRemaining} days left)`;
+                      }
                       if (row.subscription_status === "GRACE_PERIOD") {
-                        if (row.grace_period_ends_at) {
-                          const daysRemaining = Math.max(
-                            0,
-                            Math.ceil(
-                              (new Date(row.grace_period_ends_at).getTime() - Date.now()) / 86400000
-                            )
-                          );
-                          return `GRACE PERIOD (${daysRemaining} days left)`;
-                        }
                         return "GRACE PERIOD";
                       }
                       if (row.subscription_status && row.subscription_status !== "NONE") {
                         return row.subscription_status;
-                      }
-                      if (grace?.active) {
-                        return `GRACE PERIOD (${grace.daysRemaining} days left)`;
                       }
                       return "NONE";
                     },
@@ -307,15 +448,15 @@ export default function AdminChildrenPage() {
                     header: "Meals remaining",
                     render: (row: Child) => {
                       const subscription = subscriptions.find((sub) => sub.child_id === row.id);
-                      const grace = getGraceSummary(row.id);
+                      const grace = getGraceSummary(row.id) ?? getInlineGraceFromChild(row);
                       if (subscription && subscription.status === "ACTIVE") {
                         return subscription.meals_remaining;
                       }
-                      if (row.subscription_status === "GRACE_PERIOD") {
-                        return "Free meal window";
-                      }
                       if (grace?.active) {
                         return `Free meal window`;
+                      }
+                      if (row.subscription_status === "GRACE_PERIOD") {
+                        return "Free meal window";
                       }
                       return 0;
                     },
@@ -503,6 +644,60 @@ export default function AdminChildrenPage() {
                   ))}
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Manual attach subscription</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <select
+                className={selectClassName}
+                value={attachForm.child_id}
+                onChange={(event) => setAttachForm((current) => ({ ...current, child_id: event.target.value }))}
+              >
+                <option value="">Select child</option>
+                {children.map((child) => (
+                  <option key={child.id} value={child.id}>
+                    {child.full_name} · {child.student_id}
+                  </option>
+                ))}
+              </select>
+              <select
+                className={selectClassName}
+                value={attachForm.plan_id}
+                onChange={(event) => setAttachForm((current) => ({ ...current, plan_id: event.target.value }))}
+              >
+                <option value="">Select plan</option>
+                {plans.map((plan) => (
+                  <option key={plan.id} value={plan.id}>
+                    {plan.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                className={selectClassName}
+                value={attachForm.target_status}
+                onChange={(event) =>
+                  setAttachForm((current) => ({
+                    ...current,
+                    target_status: event.target.value as "ACTIVE" | "GRACE_PERIOD" | "CANCELLED",
+                  }))
+                }
+              >
+                <option value="ACTIVE">Active subscription</option>
+                <option value="GRACE_PERIOD">Grace period</option>
+                <option value="CANCELLED">Cancelled</option>
+              </select>
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={handleManualAttachSubscription} disabled={attaching}>
+                  {attaching ? "Updating..." : "Apply subscription status"}
+                </Button>
+                <Button variant="outline" onClick={handleResetMealScanForTest} disabled={resettingMealService}>
+                  {resettingMealService ? "Resetting..." : "Reset today's meal scan (test)"}
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>

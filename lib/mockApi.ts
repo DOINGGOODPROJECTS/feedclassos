@@ -52,6 +52,19 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const uid = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
 
+function getActiveGracePeriod(childId: string) {
+  const grace = grace_periods.find((entry) => entry.child_id === childId);
+  if (!grace) {
+    return null;
+  }
+
+  const start = new Date(grace.start_date);
+  const diffDays = Math.floor((new Date(todayISO()).getTime() - start.getTime()) / 86400000);
+  const active = diffDays >= 0 && diffDays < 7 && grace.days_used < 7;
+
+  return active ? grace : null;
+}
+
 function escapeSvgText(value: string) {
   return String(value)
     .replace(/&/g, "&amp;")
@@ -569,7 +582,12 @@ export async function sendPaymentLinkToGuardian(childId: string, planId?: string
   message_logs.push({
     id: uid("ml"),
     status: "SENT",
+    source: "Payment link SMS",
+    child_name: child.full_name,
+    guardian_name: guardian?.name ?? "Unknown guardian",
+    guardian_phone: recipient,
     detail: `Payment link sent to ${recipient}`,
+    failure_reason: null,
     created_at: new Date().toISOString(),
   });
 
@@ -599,6 +617,7 @@ export async function simulateWebhookSuccess(externalTxId: string, intentId: str
   });
 
   const existing = child_subscriptions.find((sub) => sub.child_id === intent.child_id);
+  const child = children.find((entry) => entry.id === intent.child_id);
   const start = todayISO();
   const end = new Date();
   end.setDate(end.getDate() + 30);
@@ -618,6 +637,16 @@ export async function simulateWebhookSuccess(externalTxId: string, intentId: str
       meals_remaining: plan?.meals_per_cycle ?? 0,
       plan_id: intent.plan_id,
     });
+  }
+
+  if (child) {
+    child.subscription_status = "ACTIVE";
+    child.grace_period_ends_at = undefined;
+  }
+
+  const graceIndex = grace_periods.findIndex((entry) => entry.child_id === intent.child_id);
+  if (graceIndex >= 0) {
+    grace_periods.splice(graceIndex, 1);
   }
 
   transactions.push({
@@ -688,7 +717,11 @@ export async function resendFailedMessages() {
   await wait(latency());
   message_logs
     .filter((msg) => msg.status === "FAILED")
-    .forEach((msg) => (msg.status = "SENT"));
+    .forEach((msg) => {
+      msg.status = "SENT";
+      msg.detail = `${msg.source ?? "SMS"} delivered after retry`;
+      msg.failure_reason = null;
+    });
   return true;
 }
 
@@ -791,7 +824,8 @@ export async function getSupervisorOverview(schoolId: string) {
 
   const problems = children.filter((child) => child.school_id === schoolId).filter((child) => {
     const sub = child_subscriptions.find((entry) => entry.child_id === child.id);
-    return !child.active || !sub || sub.status !== "ACTIVE";
+    const activeGrace = getActiveGracePeriod(child.id);
+    return !child.active || (!activeGrace && (!sub || sub.status !== "ACTIVE"));
   });
 
   return { todayMeals: todayMeals.length, byClass, problems };
@@ -825,8 +859,12 @@ export async function getProblemsForSchool(schoolId: string) {
     .filter((child) => child.school_id === schoolId)
     .map((child) => {
       const sub = child_subscriptions.find((entry) => entry.child_id === child.id);
+      const activeGrace = getActiveGracePeriod(child.id);
       if (!child.active) {
         return { child, reason: "Inactive child" };
+      }
+      if (activeGrace) {
+        return null;
       }
       if (!sub) {
         return { child, reason: "No subscription" };
@@ -920,7 +958,9 @@ export async function validateMeal(
         const activeGrace = grace_periods.find((entry) => entry.child_id === child.id);
         if (activeGrace && !activeGrace.notified) {
           const guardian = guardians.find((entry) => entry.id === child.guardian_id);
-          const message = `FeedClass notice: ${child.full_name} is now on a grace period with one free meal per day. Meals will stop after the grace period ends if the subscription is not paid.`;
+          const graceEndDate = new Date(today);
+          graceEndDate.setDate(graceEndDate.getDate() + 6);
+          const message = `FeedClass notice: ${child.full_name} started a 7-day free meal grace period today. Meals will stop after ${graceEndDate.toISOString().slice(0, 10)} if payment is not completed.`;
           message_outbox.push({
             id: uid("msg"),
             channel: guardian?.preferred_channel ?? "SMS",
@@ -932,11 +972,21 @@ export async function validateMeal(
           message_logs.push({
             id: uid("ml"),
             status: "SENT",
+            source: "Grace period SMS",
+            child_name: child.full_name,
+            guardian_name: guardian?.name ?? "Unknown guardian",
+            guardian_phone: guardian?.phone ?? "unknown",
             detail: message,
+            failure_reason: null,
             created_at: new Date().toISOString(),
           });
           activeGrace.notified = true;
         }
+
+        child.subscription_status = "GRACE_PERIOD";
+        const graceEndDate = new Date(today);
+        graceEndDate.setDate(graceEndDate.getDate() + 6);
+        child.grace_period_ends_at = graceEndDate.toISOString().slice(0, 10);
 
         transactions.push({
           id: uid("t"),

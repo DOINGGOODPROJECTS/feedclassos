@@ -3,15 +3,19 @@
 import { type ChangeEvent, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import QRCode from "qrcode";
-import { getLedger, getSubscriptionPlans } from "@/lib/mockApi";
+import { getLedger } from "@/lib/mockApi";
 import {
+  cancelBackendChildSubscription,
   createBackendPaymentIntent,
   deleteBackendChild,
   getBackendChildQr,
   getBackendChildSubscription,
+  getBackendSubscriptionPlans,
   getBackendChildren,
   getBackendClasses,
   getBackendSchools,
+  manuallyAttachBackendChildSubscription,
+  resetBackendChildMealServiceForTest,
   updateBackendChildProfile,
 } from "@/lib/backendApi";
 import { Child, ChildQr, ChildSubscription, ClassRoom, Guardian, School, SubscriptionPlan, Transaction } from "@/lib/types";
@@ -40,6 +44,10 @@ export default function ChildDetailClient() {
   const [, setGuardian] = useState<Guardian | null>(null);
   const [qrRefreshNotice, setQrRefreshNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [manualPlanId, setManualPlanId] = useState("");
+  const [manualStatus, setManualStatus] = useState<"ACTIVE" | "GRACE_PERIOD" | "CANCELLED">("ACTIVE");
+  const [attachingSubscription, setAttachingSubscription] = useState(false);
+  const [resettingMealService, setResettingMealService] = useState(false);
   const [form, setForm] = useState({
     student_id: "",
     full_name: "",
@@ -52,16 +60,16 @@ export default function ChildDetailClient() {
   });
 
   useEffect(() => {
-    getSubscriptionPlans().then(setPlans);
     getLedger().then((entries) => setLedger(entries.filter((tx) => tx.child_id === childId)));
     Promise.all([
       getBackendChildren(),
       getBackendSchools(),
       getBackendClasses(),
+      getBackendSubscriptionPlans(),
       getBackendChildQr(childId).catch(() => null),
       getBackendChildSubscription(childId).catch(() => null),
     ])
-      .then(([childData, schoolData, classData, childQr, childSubscription]) => {
+      .then(([childData, schoolData, classData, planData, childQr, childSubscription]) => {
         const nextChild = childData.children.find((entry) => entry.id === childId) ?? null;
         const nextGuardian = nextChild
           ? childData.guardians.find((entry) => entry.id === nextChild.guardian_id) ?? null
@@ -72,7 +80,9 @@ export default function ChildDetailClient() {
         setQr(childQr);
         setSchools(schoolData);
         setClasses(classData);
+        setPlans(planData);
         setSubscription(childSubscription);
+        setManualPlanId(childSubscription?.plan_id || planData.find((entry) => entry.active)?.id || planData[0]?.id || "");
 
         if (nextChild) {
           setForm({
@@ -292,6 +302,19 @@ export default function ChildDetailClient() {
 
   const activePlan = plans.find((plan) => plan.active) ?? plans[0];
   const verificationCode = qr?.qr_payload ?? buildChildQrPayload(child);
+  const graceDaysRemaining = child.grace_period_ends_at
+    ? Math.max(0, Math.ceil((new Date(child.grace_period_ends_at).getTime() - Date.now()) / 86400000))
+    : 0;
+  const hasActiveGracePeriod =
+    Boolean(child.grace_period_ends_at) && !Number.isNaN(new Date(child.grace_period_ends_at || "").getTime()) && graceDaysRemaining > 0;
+  const effectiveSubscriptionStatus =
+    child.subscription_status === "GRACE_PERIOD" || hasActiveGracePeriod
+      ? `GRACE PERIOD (${graceDaysRemaining} days left)`
+      : subscription?.status || child.subscription_status || "NONE";
+  const effectiveMealsRemaining =
+    child.subscription_status === "GRACE_PERIOD" || hasActiveGracePeriod
+      ? "Free meal window"
+      : subscription?.meals_remaining ?? 0;
 
   return (
     <div className="space-y-6">
@@ -449,7 +472,7 @@ export default function ChildDetailClient() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card id="subscription">
           <CardHeader>
             <CardTitle>Subscription</CardTitle>
           </CardHeader>
@@ -458,7 +481,7 @@ export default function ChildDetailClient() {
               <div className="space-y-2">
                 <div>
                   <p className="text-sm text-slate-500">Current status</p>
-                  <p className="text-lg font-semibold text-slate-900">{subscription.status}</p>
+                  <p className="text-lg font-semibold text-slate-900">{effectiveSubscriptionStatus}</p>
                 </div>
                 {subscription.plan_name ? (
                   <div>
@@ -468,7 +491,7 @@ export default function ChildDetailClient() {
                 ) : null}
                 <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
                   <span className="text-xs text-slate-500">Meals remaining</span>
-                  <span className="text-sm font-semibold text-slate-800">{subscription.meals_remaining}</span>
+                  <span className="text-sm font-semibold text-slate-800">{effectiveMealsRemaining}</span>
                 </div>
                 {subscription.meal_type ? (
                   <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-2">
@@ -476,9 +499,15 @@ export default function ChildDetailClient() {
                     <span className="text-sm font-semibold text-slate-800">{subscription.meal_type}</span>
                   </div>
                 ) : null}
-                <div className="text-xs text-slate-500">
-                  {subscription.start_date} → {subscription.end_date}
-                </div>
+                {hasActiveGracePeriod ? (
+                  <div className="text-xs text-slate-500">
+                    Grace period ends on {child.grace_period_ends_at?.slice(0, 10)}
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-500">
+                    {subscription.start_date} → {subscription.end_date}
+                  </div>
+                )}
                 {subscription.cancellation_reason ? (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
                     Cancellation reason: {subscription.cancellation_reason}
@@ -489,21 +518,163 @@ export default function ChildDetailClient() {
               <p className="text-sm text-slate-500">No active subscription.</p>
             )}
             {activePlan ? (
-              <div>
+              <div className="space-y-2">
                 <p className="text-sm text-slate-500">Recommended plan</p>
                 <p className="text-lg font-semibold text-slate-900">{activePlan.name}</p>
                 <p className="text-sm text-slate-500">{formatCurrency(activePlan.price)} per cycle</p>
               </div>
             ) : null}
-            <Button
-              onClick={async () => {
-                if (!activePlan) return;
-                await createBackendPaymentIntent({ child_id: childId, plan_id: activePlan.id });
-                push({ title: "Payment intent created", description: activePlan.name, variant: "success" });
-              }}
-            >
-              Create payment intent
-            </Button>
+            <div className="space-y-3 rounded-2xl border border-slate-200 p-4">
+              <p className="text-sm font-semibold text-slate-900">Manual attach subscription</p>
+              <select
+                className="flex h-10 w-full items-center rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                value={manualPlanId}
+                onChange={(event) => setManualPlanId(event.target.value)}
+              >
+                <option value="">Select plan</option>
+                {plans.map((plan) => (
+                  <option key={plan.id} value={plan.id}>
+                    {plan.name} · {formatCurrency(plan.price)}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="flex h-10 w-full items-center rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                value={manualStatus}
+                onChange={(event) =>
+                  setManualStatus(event.target.value as "ACTIVE" | "GRACE_PERIOD" | "CANCELLED")
+                }
+              >
+                <option value="ACTIVE">Active subscription</option>
+                <option value="GRACE_PERIOD">Grace period</option>
+                <option value="CANCELLED">Cancelled</option>
+              </select>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  onClick={async () => {
+                    if (manualStatus === "ACTIVE" && !manualPlanId) {
+                      push({ title: "Plan required", description: "Select a plan first.", variant: "danger" });
+                      return;
+                    }
+                    try {
+                      setAttachingSubscription(true);
+                      if (manualStatus === "ACTIVE") {
+                        const nextSubscription = await manuallyAttachBackendChildSubscription({
+                          childId,
+                          planId: manualPlanId,
+                          reason: "Manual admin attach",
+                        });
+                        setSubscription(nextSubscription);
+                        setChild((current) =>
+                          current
+                            ? {
+                                ...current,
+                                subscription_status: "ACTIVE",
+                                grace_period_ends_at: undefined,
+                              }
+                            : current
+                        );
+                        push({
+                          title: "Subscription attached",
+                          description: `${nextSubscription.plan_name ?? "Selected plan"} activated manually.`,
+                          variant: "success",
+                        });
+                        return;
+                      }
+
+                      const nextSubscription = await cancelBackendChildSubscription({
+                        childId,
+                        reason:
+                          manualStatus === "GRACE_PERIOD"
+                            ? "Admin restored grace period"
+                            : "Admin cancelled subscription",
+                        nextStatus: manualStatus,
+                      });
+                      setSubscription(nextSubscription);
+                      setChild((current) =>
+                        current
+                          ? {
+                              ...current,
+                              subscription_status: manualStatus,
+                              grace_period_ends_at:
+                                manualStatus === "GRACE_PERIOD"
+                                  ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+                                  : undefined,
+                            }
+                          : current
+                      );
+                      push({
+                        title: "Subscription updated",
+                        description:
+                          manualStatus === "GRACE_PERIOD"
+                            ? "The child has been returned to grace period."
+                            : "The child subscription has been cancelled.",
+                        variant: "success",
+                      });
+                    } catch (error) {
+                      push({
+                        title: "Subscription update failed",
+                        description: error instanceof Error ? error.message : "Unable to update subscription.",
+                        variant: "danger",
+                      });
+                    } finally {
+                      setAttachingSubscription(false);
+                    }
+                  }}
+                  disabled={attachingSubscription}
+                >
+                  {attachingSubscription ? "Updating..." : "Apply subscription status"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    if (!activePlan) return;
+                    await createBackendPaymentIntent({ child_id: childId, plan_id: activePlan.id });
+                    push({ title: "Payment intent created", description: activePlan.name, variant: "success" });
+                  }}
+                >
+                  Create payment intent
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    const confirmed = window.confirm(
+                      "Reset today's served meal record for this child for testing? This will allow scanning again today."
+                    );
+                    if (!confirmed) {
+                      return;
+                    }
+
+                    try {
+                      setResettingMealService(true);
+                      const result = await resetBackendChildMealServiceForTest({ childId });
+                      if (result.subscription) {
+                        setSubscription(result.subscription);
+                      }
+                      push({
+                        title: "Today's meal scan reset",
+                        description:
+                          result.resetCount > 0
+                            ? `Cleared ${result.resetCount} served meal record(s) and restored ${result.restoredMeals} meal(s).`
+                            : "No approved meal scan was found for today.",
+                        variant: "success",
+                      });
+                    } catch (error) {
+                      push({
+                        title: "Reset failed",
+                        description: error instanceof Error ? error.message : "Unable to reset today's meal scan.",
+                        variant: "danger",
+                      });
+                    } finally {
+                      setResettingMealService(false);
+                    }
+                  }}
+                  disabled={resettingMealService}
+                >
+                  {resettingMealService ? "Resetting..." : "Reset today's meal scan (test)"}
+                </Button>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>

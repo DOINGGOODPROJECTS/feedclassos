@@ -71,7 +71,7 @@ export interface Child {
   guardian_id: string;
   profile_image_url?: string;
   active: boolean;
-  subscription_status?: "ACTIVE" | "EXPIRED" | "PAUSED" | "NONE" | "GRACE_PERIOD";
+  subscription_status?: "ACTIVE" | "EXPIRED" | "PAUSED" | "NONE" | "GRACE_PERIOD" | "CANCELLED";
   grace_period_ends_at?: string;
 }
 
@@ -192,7 +192,12 @@ export interface MessageOutbox {
 export interface MessageLog {
   id: string;
   status: "PENDING" | "SENT" | "FAILED";
+  source?: string;
+  child_name?: string;
+  guardian_name?: string;
+  guardian_phone?: string;
   detail: string;
+  failure_reason?: string | null;
   created_at: string;
 }
 

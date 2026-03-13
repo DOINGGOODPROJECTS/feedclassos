@@ -5,6 +5,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 const ACCESS_TOKEN_KEY = "fc_access_token";
 const REFRESH_TOKEN_KEY = "fc_refresh_token";
 const LAST_ACTIVITY_KEY = "fc_last_activity_at";
+const MESSAGING_SETTINGS_KEY = "fc_messaging_settings";
 
 type BackendSchool = {
   id: string;
@@ -86,6 +87,53 @@ type BackendPaymentIntent = {
   payment_url: string;
   created_at: string;
 };
+
+type BackendMessagingSettings = {
+  schedule: "DAILY" | "WEEKLY" | "MONTHLY";
+  lastRunAt: string | null;
+  scheduleOptions?: Array<"DAILY" | "WEEKLY" | "MONTHLY">;
+};
+
+function getLocalMessagingSettings(): BackendMessagingSettings {
+  if (typeof window === "undefined") {
+    return {
+      schedule: "DAILY",
+      lastRunAt: null,
+      scheduleOptions: ["DAILY", "WEEKLY", "MONTHLY"],
+    };
+  }
+
+  try {
+    const raw = window.localStorage.getItem(MESSAGING_SETTINGS_KEY);
+    if (!raw) {
+      return {
+        schedule: "DAILY",
+        lastRunAt: null,
+        scheduleOptions: ["DAILY", "WEEKLY", "MONTHLY"],
+      };
+    }
+    const parsed = JSON.parse(raw) as Partial<BackendMessagingSettings>;
+    return {
+      schedule:
+        parsed.schedule === "WEEKLY" || parsed.schedule === "MONTHLY" || parsed.schedule === "DAILY"
+          ? parsed.schedule
+          : "DAILY",
+      lastRunAt: typeof parsed.lastRunAt === "string" ? parsed.lastRunAt : null,
+      scheduleOptions: ["DAILY", "WEEKLY", "MONTHLY"],
+    };
+  } catch {
+    return {
+      schedule: "DAILY",
+      lastRunAt: null,
+      scheduleOptions: ["DAILY", "WEEKLY", "MONTHLY"],
+    };
+  }
+}
+
+function storeLocalMessagingSettings(settings: BackendMessagingSettings) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(MESSAGING_SETTINGS_KEY, JSON.stringify(settings));
+}
 
 function isValidChildRow(entry: Partial<BackendChildRow>) {
   return Boolean(entry.id && entry.student_id && entry.full_name && entry.school_id && entry.class_id);
@@ -453,6 +501,142 @@ export async function getBackendChildSubscription(childId: string) {
   return payload.subscription ? mapChildSubscription(payload.subscription) : null;
 }
 
+export async function manuallyAttachBackendChildSubscription(input: {
+  childId: string;
+  planId: string;
+  reason: string;
+  startDate?: string;
+}) {
+  const body = JSON.stringify({
+    planId: input.planId,
+    reason: input.reason,
+    startDate: input.startDate || undefined,
+  });
+
+  try {
+    const payload = await fetchJson<{ subscription: BackendChildSubscription }>(
+      `/children/${encodeURIComponent(input.childId)}/subscription/manual`,
+      {
+        method: "POST",
+        body,
+      }
+    );
+
+    return mapChildSubscription(payload.subscription);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (!message.includes("Cannot POST")) {
+      throw error;
+    }
+
+    const payload = await fetchJson<{ subscription: BackendChildSubscription }>(
+      `/children/${encodeURIComponent(input.childId)}/subscription/renew`,
+      {
+        method: "POST",
+        body,
+      }
+    );
+
+    return mapChildSubscription(payload.subscription);
+  }
+}
+
+export async function cancelBackendChildSubscription(input: {
+  childId: string;
+  reason?: string;
+  effectiveDate?: string;
+  nextStatus?: "GRACE_PERIOD" | "CANCELLED";
+}) {
+  const body = JSON.stringify({
+    reason: input.reason || "Admin removed subscription",
+    effectiveDate: input.effectiveDate || undefined,
+    nextStatus: input.nextStatus || undefined,
+  });
+
+  try {
+    const payload = await fetchJson<{ subscription: BackendChildSubscription }>(
+      `/children/${encodeURIComponent(input.childId)}/subscription/cancel`,
+      {
+        method: "POST",
+        body,
+      }
+    );
+
+    return mapChildSubscription(payload.subscription);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (!message.includes("Cannot POST")) {
+      throw error;
+    }
+
+    const payload = await fetchJson<{ subscription: BackendChildSubscription }>(
+      `/api/children/${encodeURIComponent(input.childId)}/subscription/cancel`,
+      {
+        method: "POST",
+        body,
+      }
+    );
+
+    return mapChildSubscription(payload.subscription);
+  }
+}
+
+export async function resetBackendChildMealServiceForTest(input: {
+  childId: string;
+  serviceDate?: string;
+  mealType?: "BREAKFAST" | "LUNCH" | "DINNER";
+}) {
+  const body = JSON.stringify({
+    serviceDate: input.serviceDate || undefined,
+    mealType: input.mealType || undefined,
+  });
+
+  try {
+    const payload = await fetchJson<{
+      resetCount: number;
+      restoredMeals: number;
+      serviceDate: string;
+      mealType: string | null;
+      subscription: BackendChildSubscription | null;
+    }>(`/children/${encodeURIComponent(input.childId)}/meal-service/reset-today`, {
+      method: "POST",
+      body,
+    });
+
+    return {
+      resetCount: payload.resetCount,
+      restoredMeals: payload.restoredMeals,
+      serviceDate: payload.serviceDate,
+      mealType: payload.mealType,
+      subscription: payload.subscription ? mapChildSubscription(payload.subscription) : null,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (!message.includes("Cannot POST")) {
+      throw error;
+    }
+
+    const payload = await fetchJson<{
+      resetCount: number;
+      restoredMeals: number;
+      serviceDate: string;
+      mealType: string | null;
+      subscription: BackendChildSubscription | null;
+    }>(`/api/children/${encodeURIComponent(input.childId)}/meal-service/reset-today`, {
+      method: "POST",
+      body,
+    });
+
+    return {
+      resetCount: payload.resetCount,
+      restoredMeals: payload.restoredMeals,
+      serviceDate: payload.serviceDate,
+      mealType: payload.mealType,
+      subscription: payload.subscription ? mapChildSubscription(payload.subscription) : null,
+    };
+  }
+}
+
 export async function getBackendDashboardKpis() {
   return fetchJson<{
     mealsToday: number;
@@ -512,6 +696,68 @@ export async function sendBackendPaymentLink(intentId: string) {
     recipient: payload.recipient,
     providerReference: payload.providerReference || null,
   };
+}
+
+export async function getBackendMessagingSettings() {
+  try {
+    const payload = await fetchJson<{ settings: BackendMessagingSettings }>("/messaging/settings");
+    const normalized = {
+      ...payload.settings,
+      scheduleOptions: ["DAILY", "WEEKLY", "MONTHLY"] as Array<"DAILY" | "WEEKLY" | "MONTHLY">,
+    };
+    storeLocalMessagingSettings(normalized);
+    return normalized;
+  } catch {
+    return getLocalMessagingSettings();
+  }
+}
+
+export async function updateBackendMessagingSettings(schedule: "DAILY" | "WEEKLY" | "MONTHLY") {
+  const body = JSON.stringify({ schedule });
+
+  try {
+    const payload = await fetchJson<{ settings: BackendMessagingSettings }>("/messaging/settings", {
+      method: "PATCH",
+      body,
+    });
+    const normalized = {
+      ...payload.settings,
+      scheduleOptions: ["DAILY", "WEEKLY", "MONTHLY"] as Array<"DAILY" | "WEEKLY" | "MONTHLY">,
+    };
+    storeLocalMessagingSettings(normalized);
+    return normalized;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (!message.includes("Cannot PATCH")) {
+      const fallbackSettings: BackendMessagingSettings = {
+        schedule,
+        lastRunAt: getLocalMessagingSettings().lastRunAt,
+        scheduleOptions: ["DAILY", "WEEKLY", "MONTHLY"],
+      };
+      storeLocalMessagingSettings(fallbackSettings);
+      return fallbackSettings;
+    }
+    try {
+      const payload = await fetchJson<{ settings: BackendMessagingSettings }>("/messaging/settings", {
+        method: "POST",
+        body,
+      });
+      const normalized = {
+        ...payload.settings,
+        scheduleOptions: ["DAILY", "WEEKLY", "MONTHLY"] as Array<"DAILY" | "WEEKLY" | "MONTHLY">,
+      };
+      storeLocalMessagingSettings(normalized);
+      return normalized;
+    } catch {
+      const fallbackSettings: BackendMessagingSettings = {
+        schedule,
+        lastRunAt: getLocalMessagingSettings().lastRunAt,
+        scheduleOptions: ["DAILY", "WEEKLY", "MONTHLY"],
+      };
+      storeLocalMessagingSettings(fallbackSettings);
+      return fallbackSettings;
+    }
+  }
 }
 
 export async function createBackendSubscriptionPlan(input: Omit<SubscriptionPlan, "id">) {

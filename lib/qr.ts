@@ -9,6 +9,18 @@ function mixHash(seed: number, value: string) {
   return hash >>> 0;
 }
 
+function buildOpaqueHex(source: string, rounds: number) {
+  let state = 2166136261;
+  const chunks: string[] = [];
+
+  for (let index = 0; index < rounds; index += 1) {
+    state = mixHash(state ^ Math.imul(index + 1, 374761393), `${source}|${index}`);
+    chunks.push(state.toString(16).toUpperCase().padStart(8, "0"));
+  }
+
+  return chunks.join("");
+}
+
 export function buildChildQrPayload(
   child: Pick<
     Child,
@@ -24,15 +36,8 @@ export function buildChildQrPayload(
     child.profile_image_url ?? "",
     String(child.active),
   ].join("|");
-  let state = 2166136261;
-  const chunks: string[] = [];
-
-  for (let index = 0; index < 4; index += 1) {
-    state = mixHash(state ^ (index * 374761393), source);
-    chunks.push(state.toString(16).toUpperCase().padStart(8, "0"));
-  }
-
-  return `SMMS-${chunks.join("-")}`;
+  const opaqueHex = buildOpaqueHex(source, 8);
+  return `SMMS-${opaqueHex.slice(0, 16)}-${opaqueHex.slice(16, 32)}-${opaqueHex.slice(32, 48)}-${opaqueHex.slice(48, 64)}`;
 }
 
 export function buildVerificationLink(payload: string) {
