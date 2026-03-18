@@ -9,6 +9,7 @@ export const navByRole: Record<Role, NavItem[]> = {
   ADMIN: [
     { label: "Dashboard", href: "/app/admin/dashboard" },
     { label: "Schools", href: "/app/admin/schools" },
+    { label: "Supervisors", href: "/app/admin/supervisors" },
     { label: "Classes", href: "/app/admin/classes" },
     { label: "Children", href: "/app/admin/children" },
     { label: "Badges", href: "/app/admin/badges" },
@@ -27,7 +28,6 @@ export const navByRole: Record<Role, NavItem[]> = {
     { label: "Children", href: "/app/supervisor/children" },
     { label: "Payments", href: "/app/supervisor/payments" },
     { label: "Transactions", href: "/app/supervisor/transactions" },
-    { label: "Supervisors", href: "/app/supervisor/supervisors" },
     { label: "History", href: "/app/supervisor/history" },
     { label: "Problems", href: "/app/supervisor/problems" },
   ],

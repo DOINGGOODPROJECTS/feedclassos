@@ -6,6 +6,7 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   createBackendSubscriptionPlan,
+  deleteBackendSubscriptionPlan,
   getBackendSubscriptionPlans,
   updateBackendSubscriptionPlan,
 } from "@/lib/backendApi";
@@ -16,10 +17,9 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { DataTable } from "@/components/data-table";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatDate } from "@/lib/utils";
 
 const schema = z.object({
   name: z.string().min(2),
@@ -38,6 +38,8 @@ export default function AdminPlansPage() {
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [editing, setEditing] = useState<SubscriptionPlan | null>(null);
   const [open, setOpen] = useState(false);
+  const selectClassName =
+    "flex h-10 w-full items-center rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300";
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -90,6 +92,41 @@ export default function AdminPlansPage() {
     setOpen(true);
   };
 
+  const handleDelete = async (plan: SubscriptionPlan) => {
+    try {
+      await deleteBackendSubscriptionPlan(plan.id);
+      setPlans((prev) => prev.filter((entry) => entry.id !== plan.id));
+      push({ title: "Plan deleted", description: plan.name, variant: "success" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to delete plan.";
+
+      if (message.includes("already linked to subscriptions or payments")) {
+        const archived = await updateBackendSubscriptionPlan(plan.id, {
+          name: plan.name,
+          meal_type: plan.meal_type,
+          meals_per_cycle: plan.meals_per_cycle,
+          price: plan.price,
+          active: false,
+          effective_start_date: plan.effective_start_date,
+          effective_end_date: plan.effective_end_date,
+        });
+        setPlans((prev) => prev.map((entry) => (entry.id === archived.id ? archived : entry)));
+        push({
+          title: "Plan archived",
+          description: `${plan.name} is already in use, so it was marked inactive instead.`,
+          variant: "success",
+        });
+        return;
+      }
+
+      push({
+        title: "Delete failed",
+        description: message,
+        variant: "danger",
+      });
+    }
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -114,27 +151,44 @@ export default function AdminPlansPage() {
                 <DialogTitle>{editing ? "Edit plan" : "Create plan"}</DialogTitle>
               </DialogHeader>
               <form className="mt-4 space-y-4" onSubmit={handleSubmit}>
-                <Input placeholder="Plan name" {...form.register("name")} />
-                <div className="grid gap-3 md:grid-cols-2">
-                  <Select
-                    value={selectedMealType}
-                    onValueChange={(value) => form.setValue("meal_type", value as FormValues["meal_type"])}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Meal type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="BREAKFAST">BREAKFAST</SelectItem>
-                      <SelectItem value="LUNCH">LUNCH</SelectItem>
-                      <SelectItem value="DINNER">DINNER</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Input type="number" placeholder="Meals per cycle" {...form.register("meals_per_cycle")} />
+                <div className="space-y-2">
+                  <Label htmlFor="plan-name">Plan name</Label>
+                  <Input id="plan-name" placeholder="Plan name" {...form.register("name")} />
                 </div>
-                <Input type="number" placeholder="Price" {...form.register("price")} />
                 <div className="grid gap-3 md:grid-cols-2">
-                  <Input type="date" placeholder="Effective start date" {...form.register("effective_start_date")} />
-                  <Input type="date" placeholder="Effective end date" {...form.register("effective_end_date")} />
+                  <div className="space-y-2">
+                    <Label htmlFor="plan-meal-type">Meal type</Label>
+                    <select
+                      id="plan-meal-type"
+                      className={selectClassName}
+                      value={selectedMealType}
+                      onChange={(event) =>
+                        form.setValue("meal_type", event.target.value as FormValues["meal_type"])
+                      }
+                    >
+                      <option value="BREAKFAST">BREAKFAST</option>
+                      <option value="LUNCH">LUNCH</option>
+                      <option value="DINNER">DINNER</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="plan-meals-per-cycle">Meals per cycle</Label>
+                    <Input id="plan-meals-per-cycle" type="number" placeholder="Meals per cycle" {...form.register("meals_per_cycle")} />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="plan-price">Price</Label>
+                  <Input id="plan-price" type="number" placeholder="Price" {...form.register("price")} />
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="plan-effective-start-date">Effective start date</Label>
+                    <Input id="plan-effective-start-date" type="date" placeholder="Effective start date" {...form.register("effective_start_date")} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="plan-effective-end-date">Effective end date</Label>
+                    <Input id="plan-effective-end-date" type="date" placeholder="Effective end date" {...form.register("effective_end_date")} />
+                  </div>
                 </div>
                 <div className="flex items-center gap-3">
                   <Switch checked={isActive} onCheckedChange={(value) => form.setValue("active", value)} />
@@ -160,7 +214,9 @@ export default function AdminPlansPage() {
               header: "Effective dates",
               render: (row: SubscriptionPlan) =>
                 row.effective_start_date || row.effective_end_date
-                  ? `${row.effective_start_date || "Open"} - ${row.effective_end_date || "Open"}`
+                  ? `${row.effective_start_date ? formatDate(row.effective_start_date) : "Open"} - ${
+                      row.effective_end_date ? formatDate(row.effective_end_date) : "Open"
+                    }`
                   : "Open-ended",
             },
             {
@@ -170,9 +226,14 @@ export default function AdminPlansPage() {
             {
               header: "Actions",
               render: (row: SubscriptionPlan) => (
-                <Button variant="outline" size="sm" onClick={() => startEdit(row)}>
-                  Edit
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={() => startEdit(row)}>
+                    Edit
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => void handleDelete(row)}>
+                    Delete
+                  </Button>
+                </div>
               ),
             },
           ]}

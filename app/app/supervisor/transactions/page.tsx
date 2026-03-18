@@ -1,8 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { getClasses, getPaymentTransactionsForSchool } from "@/lib/mockApi";
-import { ClassRoom, PaymentTransactionRecord } from "@/lib/types";
+import {
+  getBackendChildren,
+  getBackendClasses,
+  getBackendPaymentIntents,
+  getBackendSubscriptionPlans,
+} from "@/lib/backendApi";
+import { Child, ClassRoom, Guardian, PaymentIntent, PaymentTransactionRecord, SubscriptionPlan } from "@/lib/types";
 import { useAppStore } from "@/lib/store";
 import { PageHeader } from "@/components/page-header";
 import { StatCards } from "@/components/stat-cards";
@@ -16,15 +21,57 @@ type TransactionFilter = "ALL" | "PAID" | "FAILED";
 
 export default function SchoolAdminTransactionsPage() {
   const schoolId = useAppStore((state) => state.supervisorSchoolId);
-  const [transactions, setTransactions] = useState<PaymentTransactionRecord[]>([]);
+  const [intents, setIntents] = useState<PaymentIntent[]>([]);
+  const [children, setChildren] = useState<Child[]>([]);
+  const [guardians, setGuardians] = useState<Guardian[]>([]);
   const [classes, setClasses] = useState<ClassRoom[]>([]);
+  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [classId, setClassId] = useState<string>("ALL");
   const [statusFilter, setStatusFilter] = useState<TransactionFilter>("ALL");
 
   useEffect(() => {
-    getPaymentTransactionsForSchool(schoolId).then(setTransactions);
-    getClasses().then((data) => setClasses(data.filter((entry) => entry.school_id === schoolId)));
+    void Promise.all([
+      getBackendPaymentIntents(schoolId),
+      getBackendChildren(schoolId),
+      getBackendClasses(schoolId),
+      getBackendSubscriptionPlans(),
+    ]).then(([intentData, childData, classData, planData]) => {
+      setIntents(intentData);
+      setChildren(childData.children);
+      setGuardians(childData.guardians);
+      setClasses(classData);
+      setPlans(planData);
+    });
   }, [schoolId]);
+
+  const transactions = useMemo<PaymentTransactionRecord[]>(
+    () =>
+      intents.map((intent) => {
+        const child = children.find((entry) => entry.id === intent.child_id);
+        const guardian = guardians.find((entry) => entry.id === child?.guardian_id);
+        const classRoom = classes.find((entry) => entry.id === child?.class_id);
+        const plan = plans.find((entry) => entry.id === intent.plan_id);
+        return {
+          intent_id: intent.id,
+          reference: intent.reference,
+          status: intent.status,
+          amount: intent.amount,
+          payment_url: intent.payment_url,
+          created_at: intent.created_at,
+          child_id: child?.id || intent.child_id,
+          child_name: child?.full_name || intent.child_id,
+          school_id: child?.school_id || schoolId,
+          school_name: "",
+          class_id: classRoom?.id || child?.class_id || "",
+          class_name: classRoom?.name || "-",
+          guardian_name: guardian?.name || "-",
+          guardian_phone: guardian?.phone || "-",
+          plan_id: plan?.id || intent.plan_id,
+          plan_name: plan?.name || intent.plan_id,
+        };
+      }),
+    [intents, children, guardians, classes, plans, schoolId]
+  );
 
   const filteredTransactions = useMemo(
     () =>

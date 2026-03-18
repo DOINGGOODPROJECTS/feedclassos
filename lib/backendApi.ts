@@ -1,4 +1,22 @@
-import { Child, ChildQr, ChildSubscription, ClassRoom, Guardian, PaymentIntent, School, SubscriptionPlan } from "./types";
+import {
+  Child,
+  ChildQr,
+  ChildSubscription,
+  ClassRoom,
+  Guardian,
+  LedgerTransaction,
+  MealServe,
+  PaymentIntent,
+  School,
+  Supplier,
+  SupplierCostPerMeal,
+  SupplierInvoice,
+  SubscriptionPlan,
+  SchoolDashboardSnapshot,
+  DonorDashboardSnapshot,
+  User,
+  ValidationLog,
+} from "./types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -29,6 +47,8 @@ type BackendChildRow = {
   id: string;
   school_id: string;
   class_id: string;
+  class_name?: string | null;
+  class_grade?: string | null;
   student_id: string;
   full_name: string;
   profile_image_url?: string | null;
@@ -81,6 +101,7 @@ type BackendPaymentIntent = {
   id: string;
   child_id: string;
   plan_id: string;
+  plan_name?: string | null;
   amount: number;
   reference: string;
   status: "PENDING" | "PAID" | "FAILED";
@@ -92,6 +113,152 @@ type BackendMessagingSettings = {
   schedule: "DAILY" | "WEEKLY" | "MONTHLY";
   lastRunAt: string | null;
   scheduleOptions?: Array<"DAILY" | "WEEKLY" | "MONTHLY">;
+};
+
+type BackendUser = {
+  id: string;
+  name: string;
+  email: string;
+  active: boolean;
+  assignedSchoolId?: string | null;
+  assigned_school_id?: string | null;
+  role?: string | null;
+};
+
+type BackendUserRecord = User & {
+  email: string;
+  active: boolean;
+  backend_role: string;
+};
+
+type BackendMealServe = {
+  id: string;
+  child_id: string;
+  child_name?: string;
+  school_id: string;
+  class_id?: string | null;
+  class_name?: string | null;
+  meal_type: "BREAKFAST" | "LUNCH" | "DINNER";
+  serve_date: string;
+  created_at: string;
+  is_grace?: boolean;
+};
+
+type BackendMealScan = {
+  id: string;
+  child_id?: string | null;
+  child_name?: string | null;
+  school_id: string;
+  class_id?: string | null;
+  class_name?: string | null;
+  qr_payload: string;
+  meal_type: "BREAKFAST" | "LUNCH" | "DINNER";
+  service_date: string;
+  served_at?: string | null;
+  outcome: "APPROVED" | "BLOCKED" | "DUPLICATE";
+  reason?: string | null;
+  created_at: string;
+};
+
+type BackendLedgerTransaction = {
+  id: string;
+  child_id: string;
+  student_id: string;
+  child_name: string;
+  school_id: string;
+  school_name: string;
+  class_id?: string | null;
+  class_name?: string | null;
+  payment_intent_id?: string | null;
+  type: "SUBSCRIPTION_PURCHASE" | "DEBIT_MEAL" | "GRACE_MEAL" | "ADJUSTMENT";
+  amount: number;
+  metadata: Record<string, string>;
+  created_at: string;
+};
+
+type BackendSupplier = {
+  id: string;
+  name: string;
+  contact: string;
+  active: boolean;
+};
+
+type BackendSupplierInvoice = {
+  id: string;
+  supplier_id: string;
+  supplier_name?: string;
+  school_id: string;
+  school_name?: string;
+  month: string;
+  amount: number;
+  due_date?: string | null;
+  status: "PAID" | "DUE";
+  paid_amount?: number;
+  last_paid_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+type BackendSchoolDashboard = {
+  school: { id: string; name: string };
+  serviceDate: string;
+  mealsServedToday: number;
+  mealsByClass: Array<{ class_id: string; class_name: string; total: number }>;
+  failedScans: Array<{
+    id: string;
+    child_id?: string | null;
+    student_id?: string | null;
+    child_name: string;
+    class_name?: string | null;
+    meal_type?: "BREAKFAST" | "LUNCH" | "DINNER" | null;
+    reason: string;
+    created_at: string;
+  }>;
+  childrenMissingSubscriptions: Array<{
+    child_id: string;
+    student_id: string;
+    child_name: string;
+    class_name?: string | null;
+    guardian_name?: string | null;
+    guardian_phone?: string | null;
+    subscription_status: "ACTIVE" | "EXPIRED" | "CANCELLED" | "PAUSED" | "NONE" | "GRACE_PERIOD";
+  }>;
+  paymentFollowUps: Array<{
+    id: string;
+    reference: string;
+    status: "PENDING" | "PAID" | "FAILED";
+    payment_url: string;
+    created_at: string;
+    child_id: string;
+    student_id: string;
+    child_name: string;
+    class_name?: string | null;
+    guardian_name?: string | null;
+    guardian_phone?: string | null;
+  }>;
+  successfulScans24h: Array<{
+    id: string;
+    child_id?: string | null;
+    student_id?: string | null;
+    child_name: string;
+    class_name?: string | null;
+    meal_type?: "BREAKFAST" | "LUNCH" | "DINNER" | null;
+    created_at: string;
+  }>;
+};
+
+type BackendDonorDashboard = {
+  totalMeals: number;
+  totalChildren: number;
+  fundsReceived: number;
+  costPerMeal: number;
+  trends: Array<{
+    label: string;
+    mealsServed: number;
+    fundsReceived: number;
+    costPerMeal: number;
+    schoolsSupported: number;
+  }>;
 };
 
 function getLocalMessagingSettings(): BackendMessagingSettings {
@@ -188,6 +355,29 @@ function decodeJwtPayload(token: string) {
   }
 }
 
+export function getAccessTokenRole() {
+  if (typeof window === "undefined") return null;
+  const token = getAccessToken();
+  if (!token) {
+    return null;
+  }
+
+  const payload = decodeJwtPayload(token) as { role?: string } | null;
+  if (!payload?.role) {
+    return null;
+  }
+
+  if (payload.role === "ADMIN" || payload.role === "DONOR_READONLY") {
+    return payload.role;
+  }
+
+  if (payload.role === "SUPERVISOR" || payload.role === "SCHOOL_ADMIN") {
+    return "SCHOOL_ADMIN";
+  }
+
+  return null;
+}
+
 export function getAccessTokenExpiryMs() {
   if (typeof window === "undefined") return 0;
   const token = getAccessToken();
@@ -267,6 +457,19 @@ function mapSchool(entry: BackendSchool): School {
   };
 }
 
+function mapUser(entry: BackendUser): BackendUserRecord {
+  const backendRole = String(entry.role || "SUPERVISOR").toUpperCase();
+  return {
+    id: entry.id,
+    name: entry.name,
+    role: backendRole === "SUPERVISOR" ? "SCHOOL_ADMIN" : backendRole === "ADMIN" ? "ADMIN" : "SCHOOL_ADMIN",
+    assigned_school_id: entry.assigned_school_id || entry.assignedSchoolId || undefined,
+    email: entry.email,
+    active: Boolean(entry.active),
+    backend_role: backendRole,
+  };
+}
+
 function mapClass(entry: BackendClass): ClassRoom {
   return {
     id: entry.id,
@@ -337,6 +540,7 @@ function mapPaymentIntent(entry: BackendPaymentIntent): PaymentIntent {
     id: entry.id,
     child_id: entry.child_id,
     plan_id: entry.plan_id,
+    plan_name: entry.plan_name || null,
     amount: Number(entry.amount || 0),
     reference: entry.reference,
     status: entry.status,
@@ -345,9 +549,185 @@ function mapPaymentIntent(entry: BackendPaymentIntent): PaymentIntent {
   };
 }
 
+function mapSupplier(entry: BackendSupplier): Supplier {
+  return {
+    id: entry.id,
+    name: entry.name,
+    contact: entry.contact,
+    active: Boolean(entry.active),
+  };
+}
+
+function mapSupplierInvoice(entry: BackendSupplierInvoice): SupplierInvoice {
+  return {
+    id: entry.id,
+    supplier_id: entry.supplier_id,
+    supplier_name: entry.supplier_name,
+    school_id: entry.school_id,
+    school_name: entry.school_name,
+    month: entry.month,
+    amount: Number(entry.amount || 0),
+    due_date: entry.due_date || null,
+    status: entry.status,
+    paid_amount: Number(entry.paid_amount || 0),
+    last_paid_at: entry.last_paid_at || null,
+    created_at: entry.created_at || null,
+    updated_at: entry.updated_at || null,
+  };
+}
+
 export async function getBackendSchools() {
   const payload = await fetchJson<{ schools: BackendSchool[] }>("/schools");
   return payload.schools.map(mapSchool);
+}
+
+export async function getBackendSuppliers() {
+  const payload = await fetchJson<{ suppliers: BackendSupplier[] }>("/suppliers");
+  return payload.suppliers.map(mapSupplier);
+}
+
+export async function upsertBackendSupplier(input: Omit<Supplier, "id"> & { id?: string }) {
+  const path = input.id ? `/suppliers/${encodeURIComponent(input.id)}` : "/suppliers";
+  const method = input.id ? "PATCH" : "POST";
+  const payload = await fetchJson<{ supplier: BackendSupplier }>(path, {
+    method,
+    body: JSON.stringify({
+      name: input.name,
+      contact: input.contact,
+      active: input.active,
+    }),
+  });
+
+  return mapSupplier(payload.supplier);
+}
+
+export async function getBackendSupplierInvoices(filters?: {
+  school_id?: string;
+  month?: string;
+  status?: "PAID" | "DUE";
+}) {
+  const params = new URLSearchParams();
+  if (filters?.school_id) params.set("school_id", filters.school_id);
+  if (filters?.month) params.set("month", filters.month);
+  if (filters?.status) params.set("status", filters.status);
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const payload = await fetchJson<{ invoices: BackendSupplierInvoice[] }>(`/invoices${query}`);
+  return payload.invoices.map(mapSupplierInvoice);
+}
+
+export async function createBackendSupplierInvoice(input: {
+  supplier_id: string;
+  school_id: string;
+  month: string;
+  amount: number;
+  due_date?: string | null;
+}) {
+  const payload = await fetchJson<{ invoice: BackendSupplierInvoice }>("/invoices", {
+    method: "POST",
+    body: JSON.stringify({
+      supplierId: input.supplier_id,
+      schoolId: input.school_id,
+      month: input.month,
+      amount: input.amount,
+      dueDate: input.due_date || null,
+    }),
+  });
+  return mapSupplierInvoice(payload.invoice);
+}
+
+export async function payBackendSupplierInvoice(invoiceId: string, amount?: number) {
+  const payload = await fetchJson<{ invoice: BackendSupplierInvoice }>(`/invoices/${encodeURIComponent(invoiceId)}/pay`, {
+    method: "POST",
+    body: JSON.stringify(amount ? { amount } : {}),
+  });
+  return mapSupplierInvoice(payload.invoice);
+}
+
+export async function getBackendSupplierCostPerMeal(filters?: { school_id?: string; month?: string }) {
+  const params = new URLSearchParams();
+  if (filters?.school_id) params.set("school_id", filters.school_id);
+  if (filters?.month) params.set("month", filters.month);
+  const query = params.toString() ? `?${params.toString()}` : "";
+  return fetchJson<SupplierCostPerMeal>(`/invoices/cost-per-meal${query}`);
+}
+
+export async function getBackendUsers() {
+  const payload = await fetchJson<{ users: BackendUser[]; roles?: Array<{ name: string }> }>("/users");
+  return payload.users.map(mapUser);
+}
+
+export async function createBackendSupervisor(input: {
+  name: string;
+  email: string;
+  password: string;
+  school_id: string;
+}) {
+  const payload = await fetchJson<{ user: BackendUser }>("/users", {
+    method: "POST",
+    body: JSON.stringify({
+      name: input.name,
+      email: input.email,
+      password: input.password,
+      role: "SUPERVISOR",
+      assignedSchoolId: input.school_id,
+    }),
+  });
+
+  return mapUser(payload.user);
+}
+
+export async function updateBackendSupervisor(
+  id: string,
+  input: {
+    name?: string;
+    email?: string;
+    password?: string;
+    active?: boolean;
+    school_id?: string;
+  }
+) {
+  const payload = await fetchJson<{ user: BackendUser }>(`/users/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      name: input.name,
+      email: input.email,
+      password: input.password || undefined,
+      active: input.active,
+    }),
+  });
+
+  const updatedUser = mapUser(payload.user);
+  if (input.school_id) {
+    const assigned = await fetchJson<{ user: BackendUser }>(`/users/${encodeURIComponent(id)}/assign-school`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        schoolId: input.school_id,
+      }),
+    });
+    return mapUser(assigned.user);
+  }
+
+  return updatedUser;
+}
+
+export async function deleteBackendSupervisor(id: string) {
+  const encodedId = encodeURIComponent(id);
+  try {
+    const payload = await fetchJson<{ user: BackendUser }>(`/users/${encodedId}`, {
+      method: "DELETE",
+    });
+    return mapUser(payload.user);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (!message.includes("Cannot DELETE /users/")) {
+      throw error;
+    }
+
+    const payload = await fetchJson<{ user: BackendUser }>(`/api/users/${encodedId}`, {
+      method: "DELETE",
+    });
+    return mapUser(payload.user);
+  }
 }
 
 export async function createBackendSchool(input: { name: string; location: string }) {
@@ -383,6 +763,62 @@ export async function getBackendClasses(schoolId?: string) {
   return payload.classes.map(mapClass);
 }
 
+function mapMealServe(entry: BackendMealServe): MealServe & { child_name?: string; class_id?: string; class_name?: string } {
+  return {
+    id: entry.id,
+    child_id: entry.child_id,
+    school_id: entry.school_id,
+    meal_type: entry.meal_type,
+    serve_date: entry.serve_date,
+    created_at: entry.created_at,
+    is_grace: Boolean(entry.is_grace),
+    child_name: entry.child_name || undefined,
+    class_id: entry.class_id || undefined,
+    class_name: entry.class_name || undefined,
+  };
+}
+
+function mapMealScanToValidationLog(entry: BackendMealScan): ValidationLog & { child_name?: string; reason?: string | null; meal_type?: string } {
+  const reasonCodeMap: Record<string, ValidationLog["reason_code"]> = {
+    "Subscription expired": "EXPIRED",
+    "No active subscription": "NO_SUBSCRIPTION",
+    "Child is inactive": "INACTIVE_CHILD",
+    "Insufficient meals remaining": "INSUFFICIENT_MEALS",
+    "Meal already served for this child and meal type today": "ALREADY_SERVED",
+  };
+
+  return {
+    id: entry.id,
+    child_id: entry.child_id || undefined,
+    school_id: entry.school_id,
+    qr_payload: entry.qr_payload,
+    result: entry.outcome === "APPROVED" ? "SUCCESS" : "FAILED",
+    reason_code: reasonCodeMap[entry.reason || ""] || (entry.outcome === "APPROVED" ? "OK" : "NO_SUBSCRIPTION"),
+    created_at: entry.served_at || entry.created_at,
+    child_name: entry.child_name || undefined,
+    reason: entry.reason || null,
+    meal_type: entry.meal_type,
+  };
+}
+
+function mapLedgerTransaction(entry: BackendLedgerTransaction): LedgerTransaction {
+  return {
+    id: entry.id,
+    child_id: entry.child_id,
+    student_id: entry.student_id,
+    child_name: entry.child_name,
+    school_id: entry.school_id,
+    school_name: entry.school_name,
+    class_id: entry.class_id || "",
+    class_name: entry.class_name || "-",
+    payment_intent_id: entry.payment_intent_id || null,
+    type: entry.type,
+    amount: Number(entry.amount || 0),
+    metadata: entry.metadata || {},
+    created_at: entry.created_at,
+  };
+}
+
 export async function createBackendClass(input: { name: string; grade: string; school_id: string }) {
   const payload = await fetchJson<{ class: BackendClass }>(`/schools/${input.school_id}/classes`, {
     method: "POST",
@@ -409,15 +845,76 @@ export async function updateBackendClass(id: string, input: { name: string; grad
   return mapClass(payload.class);
 }
 
-export async function getBackendChildren() {
-  const payload = await fetchJson<{ children: BackendChildRow[] }>("/children");
+export async function getBackendChildren(schoolId?: string, classId?: string) {
+  const params = new URLSearchParams();
+  if (schoolId) params.set("school_id", schoolId);
+  if (classId) params.set("class_id", classId);
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const payload = await fetchJson<{ children: BackendChildRow[] }>(`/children${query}`);
   const validRows = payload.children.filter(isValidChildRow);
   const children = validRows.map(mapChild);
   const guardians = validRows
     .map(mapGuardian)
     .filter((entry): entry is Guardian => entry !== null);
 
-  return { children, guardians };
+  return {
+    children,
+    guardians,
+    classMetaByChildId: Object.fromEntries(
+      validRows.map((entry) => [
+        entry.id,
+        {
+          class_name: entry.class_name || null,
+          class_grade: entry.class_grade || null,
+        },
+      ])
+    ),
+  };
+}
+
+export async function getBackendMealServes(schoolId?: string, serveDate?: string) {
+  const params = new URLSearchParams();
+  if (schoolId) params.set("school_id", schoolId);
+  if (serveDate) params.set("serve_date", serveDate);
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const payload = await fetchJson<{ mealServes: BackendMealServe[] }>(`/meal-serves${query}`);
+  return payload.mealServes.map(mapMealServe);
+}
+
+export async function getBackendValidationLogs(schoolId?: string, serviceDate?: string) {
+  const params = new URLSearchParams();
+  if (schoolId) params.set("school_id", schoolId);
+  if (serviceDate) params.set("service_date", serviceDate);
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const payload = await fetchJson<{ mealScans: BackendMealScan[] }>(`/meal-scans${query}`);
+  return payload.mealScans.map(mapMealScanToValidationLog);
+}
+
+export async function getBackendLedgerTransactions(filters: {
+  child_id?: string;
+  school_id?: string;
+  type?: string;
+  date_from?: string;
+  date_to?: string;
+} = {}) {
+  const params = new URLSearchParams();
+  if (filters.child_id) params.set("child_id", filters.child_id);
+  if (filters.school_id) params.set("school_id", filters.school_id);
+  if (filters.type) params.set("type", filters.type);
+  if (filters.date_from) params.set("date_from", filters.date_from);
+  if (filters.date_to) params.set("date_to", filters.date_to);
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const payload = await fetchJson<{
+    transactions: BackendLedgerTransaction[];
+    aggregates: Array<{ type: string; total_count: number; total_amount: number }>;
+    scope: "full" | "aggregate_only";
+  }>(`/ledger/transactions${query}`);
+
+  return {
+    transactions: payload.transactions.map(mapLedgerTransaction),
+    aggregates: payload.aggregates,
+    scope: payload.scope,
+  };
 }
 
 export async function createBackendChildEnrollment(input: {
@@ -657,6 +1154,20 @@ export async function getBackendDashboardKpis() {
   }>("/dashboard/kpis");
 }
 
+export async function getBackendSchoolDashboard(schoolId?: string, asOfDate?: string): Promise<SchoolDashboardSnapshot> {
+  const params = new URLSearchParams();
+  if (schoolId) params.set("school_id", schoolId);
+  if (asOfDate) params.set("as_of_date", asOfDate);
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const payload = await fetchJson<{ dashboard: BackendSchoolDashboard }>(`/dash/school${query}`);
+  return payload.dashboard;
+}
+
+export async function getBackendDonorDashboard(): Promise<DonorDashboardSnapshot> {
+  const payload = await fetchJson<{ dashboard: BackendDonorDashboard }>("/dash/donor");
+  return payload.dashboard;
+}
+
 export async function getBackendSubscriptionPlans() {
   const payload = await fetchJson<{ plans: BackendPlan[] }>("/plans");
   return payload.plans.map(mapPlan);
@@ -792,6 +1303,30 @@ export async function updateBackendSubscriptionPlan(id: string, input: Omit<Subs
   });
 
   return mapPlan(payload.plan);
+}
+
+export async function deleteBackendSubscriptionPlan(id: string) {
+  const encodedId = encodeURIComponent(id);
+
+  try {
+    const payload = await fetchJson<{ plan: BackendPlan }>(`/plans/${encodedId}`, {
+      method: "DELETE",
+    });
+
+    return mapPlan(payload.plan);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error || "");
+
+    if (message.includes(`Cannot DELETE /plans/${encodedId}`) || message.includes("Cannot DELETE /plans/")) {
+      const payload = await fetchJson<{ plan: BackendPlan }>(`/api/plans/${encodedId}`, {
+        method: "DELETE",
+      });
+
+      return mapPlan(payload.plan);
+    }
+
+    throw error;
+  }
 }
 
 export async function updateBackendChildProfile(

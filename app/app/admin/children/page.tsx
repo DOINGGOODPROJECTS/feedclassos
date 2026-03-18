@@ -261,6 +261,18 @@ export default function AdminChildrenPage() {
     }
   };
 
+  const handlePreparePlanAssignment = (child: Child) => {
+    const activePlan = plans.find((entry) => entry.active) ?? plans[0];
+    setAttachForm((current) => ({
+      ...current,
+      child_id: child.id,
+      plan_id: current.plan_id || activePlan?.id || "",
+      target_status: "ACTIVE",
+    }));
+    const target = document.getElementById("assign-child-plan-card");
+    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   const handleResetMealScanForTest = async () => {
     if (!attachForm.child_id) {
       push({ title: "Child required", description: "Select a child first.", variant: "danger" });
@@ -468,6 +480,9 @@ export default function AdminChildrenPage() {
                         <Button variant="outline" size="sm" asChild>
                           <Link href={`/app/admin/children/${row.id}`}>View child</Link>
                         </Button>
+                        <Button variant="outline" size="sm" onClick={() => handlePreparePlanAssignment(row)}>
+                          Assign plan
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -647,9 +662,9 @@ export default function AdminChildrenPage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card id="assign-child-plan-card">
             <CardHeader>
-              <CardTitle>Manual attach subscription</CardTitle>
+              <CardTitle>Assign plan to enrolled child</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <select
@@ -668,11 +683,12 @@ export default function AdminChildrenPage() {
                 className={selectClassName}
                 value={attachForm.plan_id}
                 onChange={(event) => setAttachForm((current) => ({ ...current, plan_id: event.target.value }))}
+                disabled={attachForm.target_status !== "ACTIVE"}
               >
                 <option value="">Select plan</option>
                 {plans.map((plan) => (
                   <option key={plan.id} value={plan.id}>
-                    {plan.name}
+                    {plan.name} · {plan.meal_type} · ${plan.price}
                   </option>
                 ))}
               </select>
@@ -690,9 +706,20 @@ export default function AdminChildrenPage() {
                 <option value="GRACE_PERIOD">Grace period</option>
                 <option value="CANCELLED">Cancelled</option>
               </select>
+              {attachForm.target_status !== "ACTIVE" ? (
+                <p className="text-xs text-slate-500">
+                  Plan selection is only required when assigning an active subscription.
+                </p>
+              ) : null}
               <div className="flex flex-wrap gap-2">
                 <Button onClick={handleManualAttachSubscription} disabled={attaching}>
-                  {attaching ? "Updating..." : "Apply subscription status"}
+                  {attaching
+                    ? "Saving..."
+                    : attachForm.target_status === "ACTIVE"
+                      ? "Assign plan"
+                      : attachForm.target_status === "GRACE_PERIOD"
+                        ? "Move child to grace period"
+                        : "Cancel child subscription"}
                 </Button>
                 <Button variant="outline" onClick={handleResetMealScanForTest} disabled={resettingMealService}>
                   {resettingMealService ? "Resetting..." : "Reset today's meal scan (test)"}

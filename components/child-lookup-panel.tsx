@@ -2,12 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  getPaymentIntentsForSchool,
-  getSchools,
-  getSupervisorChildrenLookup,
-  getSupervisorOverview,
-  sendPaymentLinkToGuardian,
-} from "@/lib/mockApi";
+  getBackendChildQr,
+  getBackendChildSubscription,
+  getBackendChildren,
+  getBackendClasses,
+  getBackendPaymentIntents,
+  getBackendSchools,
+  sendBackendPaymentLink,
+} from "@/lib/backendApi";
 import { PaymentIntent, School, SupervisorChildLookupItem } from "@/lib/types";
 import { useAppStore } from "@/lib/store";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,16 +33,42 @@ export function ChildLookupPanel() {
   const [selectedChildId, setSelectedChildId] = useState<string>("");
 
   useEffect(() => {
-    getSchools().then((data) => setSchool(data.find((entry) => entry.id === schoolId) ?? null));
-    getSupervisorOverview(schoolId).then((overview) => {
-      setClassOptions([{ id: "ALL", label: "All classes" }].concat(
-        overview.byClass.map((item) => ({ id: item.class_id, label: item.class_name }))
-      ));
-    });
-    getPaymentIntentsForSchool(schoolId).then(setPaymentIntents);
-    getSupervisorChildrenLookup(schoolId).then((data) => {
-      setLookupItems(data);
-      setSelectedChildId((current) => current || data[0]?.child.id || "");
+    void getBackendSchools().then(async (schoolData) => {
+      const effectiveSchool =
+        schoolData.find((entry) => entry.id === schoolId) ??
+        (schoolData.length === 1 ? schoolData[0] : null);
+      const effectiveSchoolId = effectiveSchool?.id;
+
+      const [classData, intentData, childData] = await Promise.all([
+        getBackendClasses(effectiveSchoolId),
+        getBackendPaymentIntents(effectiveSchoolId),
+        getBackendChildren(effectiveSchoolId),
+      ]);
+
+      setSchool(effectiveSchool);
+      setClassOptions([{ id: "ALL", label: "All classes" }].concat(classData.map((item) => ({ id: item.id, label: item.name }))));
+      setPaymentIntents(intentData);
+
+      const lookupData = await Promise.all(
+        childData.children.map(async (child) => {
+          const guardian = childData.guardians.find((entry) => entry.id === child.guardian_id);
+          const classMeta = childData.classMetaByChildId?.[child.id];
+          const classEntry = classData.find((entry) => entry.id === child.class_id);
+          const qr = await getBackendChildQr(child.id).catch(() => null);
+          const subscription = await getBackendChildSubscription(child.id).catch(() => null);
+          return {
+            child,
+            class_name: classMeta?.class_name || classEntry?.name || "-",
+            grade: classMeta?.class_grade || classEntry?.grade || "",
+            guardian,
+            subscription,
+            qr,
+          } satisfies SupervisorChildLookupItem;
+        })
+      );
+
+      setLookupItems(lookupData);
+      setSelectedChildId((current) => current || lookupData[0]?.child.id || "");
     });
   }, [schoolId]);
 
@@ -74,25 +102,35 @@ export function ChildLookupPanel() {
   const selectedPaymentIntent = selectedLookupItem ? latestIntentByChildId.get(selectedLookupItem.child.id) ?? null : null;
 
   const handleSendPaymentLink = async (childId: string, childName: string) => {
-    const result = await sendPaymentLinkToGuardian(childId);
-    if (!result) {
+    const intent = latestIntentByChildId.get(childId);
+    if (!intent) {
       push({
         title: "Payment link failed",
-        description: `Could not prepare a payment link for ${childName}.`,
+        description: `No payment intent exists yet for ${childName}.`,
         variant: "danger",
       });
       return;
     }
 
-    setPaymentIntents((prev) => {
-      const remaining = prev.filter((entry) => entry.id !== result.intent.id);
-      return [...remaining, result.intent];
-    });
-    push({
-      title: "Payment link sent",
-      description: `${childName} guardian notified via ${result.channel}.`,
-      variant: "success",
-    });
+    void sendBackendPaymentLink(intent.id)
+      .then((result) => {
+        setPaymentIntents((prev) => {
+          const remaining = prev.filter((entry) => entry.id !== result.intent.id);
+          return [...remaining, result.intent];
+        });
+        push({
+          title: "Payment link sent",
+          description: `${childName} guardian notified via ${result.channel}.`,
+          variant: "success",
+        });
+      })
+      .catch((error) => {
+        push({
+          title: "Payment link failed",
+          description: error instanceof Error ? error.message : `Could not send a payment link for ${childName}.`,
+          variant: "danger",
+        });
+      });
   };
 
   return (

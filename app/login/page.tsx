@@ -15,7 +15,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
 const demoAccounts = [
   { label: "Program Admin", email: "admin@feedclass.test", password: "password123" },
-  { label: "School Admin / Supervisor", email: "supervisor@feedclass.test", password: "password123" },
+  { label: "School Admin / Supervisor", email: "supervisor@sherpherdhill.com", password: "Dev5555!" },
   { label: "Donor", email: "donor@feedclass.test", password: "password123" },
 ];
 

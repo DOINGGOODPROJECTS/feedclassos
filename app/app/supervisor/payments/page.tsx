@@ -16,7 +16,6 @@ import { DataTable } from "@/components/data-table";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency } from "@/lib/utils";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function SchoolAdminPaymentsPage() {
   const { push } = useToast();
@@ -27,26 +26,58 @@ export default function SchoolAdminPaymentsPage() {
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [schools, setSchools] = useState<School[]>([]);
   const [classes, setClasses] = useState<ClassRoom[]>([]);
+  const [effectiveSchoolId, setEffectiveSchoolId] = useState<string>("");
   const [classId, setClassId] = useState<string>("ALL");
 
   useEffect(() => {
-    Promise.all([
-      getBackendPaymentIntents(schoolId),
-      getBackendClasses(schoolId),
-      getBackendChildren(),
-      getBackendSubscriptionPlans(),
-      getBackendSchools(),
-    ]).then(([intentData, classData, childData, planData, schoolData]) => {
-      setIntents(intentData);
-      setClasses(classData);
-      setChildren(childData.children);
-      setGuardians(childData.guardians);
-      setPlans(planData);
-      setSchools(schoolData);
-    });
-  }, [schoolId]);
+    void (async () => {
+      try {
+        const schoolData = await getBackendSchools();
+        const effectiveSchool =
+          schoolData.find((entry) => entry.id === schoolId) ??
+          (schoolData.length === 1 ? schoolData[0] : null);
+        const resolvedSchoolId = effectiveSchool?.id || "";
 
-  const school = useMemo(() => schools.find((entry) => entry.id === schoolId) ?? null, [schoolId, schools]);
+        const [intentResult, classResult, childResult, planResult] = await Promise.allSettled([
+          getBackendPaymentIntents(resolvedSchoolId || undefined),
+          getBackendClasses(resolvedSchoolId || undefined),
+          getBackendChildren(resolvedSchoolId || undefined),
+          getBackendSubscriptionPlans(),
+        ]);
+
+        setSchools(schoolData);
+        setEffectiveSchoolId(resolvedSchoolId);
+        setIntents(intentResult.status === "fulfilled" ? intentResult.value : []);
+        setClasses(classResult.status === "fulfilled" ? classResult.value : []);
+        setChildren(childResult.status === "fulfilled" ? childResult.value.children : []);
+        setGuardians(childResult.status === "fulfilled" ? childResult.value.guardians : []);
+        setPlans(planResult.status === "fulfilled" ? planResult.value : []);
+
+        const rejected = [intentResult, classResult, childResult, planResult].find(
+          (result) => result.status === "rejected"
+        );
+        if (rejected && rejected.status === "rejected") {
+          push({
+            title: "Some payment data could not be loaded",
+            description:
+              rejected.reason instanceof Error ? rejected.reason.message : "One or more sections failed to load.",
+            variant: "danger",
+          });
+        }
+      } catch (error) {
+        push({
+          title: "Failed to load payments",
+          description: error instanceof Error ? error.message : "Unable to load school payment data.",
+          variant: "danger",
+        });
+      }
+    })();
+  }, [schoolId, push]);
+
+  const school = useMemo(
+    () => schools.find((entry) => entry.id === effectiveSchoolId) ?? null,
+    [effectiveSchoolId, schools]
+  );
   const filteredIntents = useMemo(
     () =>
       intents.filter((intent) => {
@@ -93,19 +124,18 @@ export default function SchoolAdminPaymentsPage() {
 
       <div className="rounded-3xl border border-slate-200 bg-white p-4">
         <div className="mb-4 max-w-[240px]">
-          <Select value={classId} onValueChange={setClassId}>
-            <SelectTrigger>
-              <SelectValue placeholder="All classes" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">All classes</SelectItem>
-              {classes.map((entry) => (
-                <SelectItem key={entry.id} value={entry.id}>
-                  {entry.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <select
+            value={classId}
+            onChange={(e) => setClassId(e.target.value)}
+            className="h-10 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300"
+          >
+            <option value="ALL">All classes</option>
+            {classes.map((entry) => (
+              <option key={entry.id} value={entry.id}>
+                {entry.name}
+              </option>
+            ))}
+          </select>
         </div>
 
         <DataTable
@@ -136,7 +166,7 @@ export default function SchoolAdminPaymentsPage() {
             {
               header: "Plan",
               render: (row: PaymentIntent) =>
-                plans.find((entry) => entry.id === row.plan_id)?.name ?? row.plan_id,
+                row.plan_name || plans.find((entry) => entry.id === row.plan_id)?.name || "Plan unavailable",
             },
             { header: "Amount", render: (row: PaymentIntent) => formatCurrency(row.amount) },
             { header: "Status", render: (row: PaymentIntent) => row.status },

@@ -115,10 +115,21 @@ export interface Transaction {
   created_at: string;
 }
 
+export interface LedgerTransaction extends Transaction {
+  student_id: string;
+  child_name: string;
+  school_id: string;
+  school_name: string;
+  class_id: string;
+  class_name: string;
+  payment_intent_id?: string | null;
+}
+
 export interface PaymentIntent {
   id: string;
   child_id: string;
   plan_id: string;
+  plan_name?: string | null;
   amount: number;
   reference: string;
   status: PaymentStatus;
@@ -211,10 +222,17 @@ export interface Supplier {
 export interface SupplierInvoice {
   id: string;
   supplier_id: string;
+  supplier_name?: string;
   school_id: string;
+  school_name?: string;
   month: string;
   amount: number;
+  due_date?: string | null;
   status: "PAID" | "DUE";
+  paid_amount?: number;
+  last_paid_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 export interface SupplierPayment {
@@ -223,6 +241,12 @@ export interface SupplierPayment {
   invoice_id: string;
   amount: number;
   paid_at: string;
+}
+
+export interface SupplierCostPerMeal {
+  supplierCost: number;
+  mealsServed: number;
+  costPerMeal: number;
 }
 
 export interface GracePeriod {
@@ -254,4 +278,82 @@ export interface AiReport {
   title: string;
   summary: string;
   created_at: string;
+}
+
+export interface SchoolDashboardClassMeals {
+  class_id: string;
+  class_name: string;
+  total: number;
+}
+
+export interface SchoolDashboardFailedScan {
+  id: string;
+  child_id?: string | null;
+  student_id?: string | null;
+  child_name: string;
+  class_name?: string | null;
+  meal_type?: MealType | null;
+  reason: string;
+  created_at: string;
+}
+
+export interface SchoolDashboardMissingSubscription {
+  child_id: string;
+  student_id: string;
+  child_name: string;
+  class_name?: string | null;
+  guardian_name?: string | null;
+  guardian_phone?: string | null;
+  subscription_status: SubscriptionStatus | "NONE";
+}
+
+export interface SchoolDashboardPaymentFollowUp {
+  id: string;
+  reference: string;
+  status: PaymentStatus;
+  payment_url: string;
+  created_at: string;
+  child_id: string;
+  student_id: string;
+  child_name: string;
+  class_name?: string | null;
+  guardian_name?: string | null;
+  guardian_phone?: string | null;
+}
+
+export interface SchoolDashboardSuccessfulScan {
+  id: string;
+  child_id?: string | null;
+  student_id?: string | null;
+  child_name: string;
+  class_name?: string | null;
+  meal_type?: MealType | null;
+  created_at: string;
+}
+
+export interface SchoolDashboardSnapshot {
+  school: { id: string; name: string };
+  serviceDate: string;
+  mealsServedToday: number;
+  mealsByClass: SchoolDashboardClassMeals[];
+  failedScans: SchoolDashboardFailedScan[];
+  childrenMissingSubscriptions: SchoolDashboardMissingSubscription[];
+  paymentFollowUps: SchoolDashboardPaymentFollowUp[];
+  successfulScans24h: SchoolDashboardSuccessfulScan[];
+}
+
+export interface DonorDashboardTrendPoint {
+  label: string;
+  mealsServed: number;
+  fundsReceived: number;
+  costPerMeal: number;
+  schoolsSupported: number;
+}
+
+export interface DonorDashboardSnapshot {
+  totalMeals: number;
+  totalChildren: number;
+  fundsReceived: number;
+  costPerMeal: number;
+  trends: DonorDashboardTrendPoint[];
 }

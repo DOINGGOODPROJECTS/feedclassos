@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { getSuppliers, upsertSupplier } from "@/lib/mockApi";
+import { getBackendSuppliers, upsertBackendSupplier } from "@/lib/backendApi";
 import { Supplier } from "@/lib/types";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -35,11 +35,11 @@ export default function AdminSuppliersPage() {
   });
 
   useEffect(() => {
-    getSuppliers().then(setSuppliers);
+    getBackendSuppliers().then(setSuppliers);
   }, []);
 
   const handleSubmit = form.handleSubmit(async (values) => {
-    const saved = await upsertSupplier(editing ? { ...values, id: editing.id } : values);
+    const saved = await upsertBackendSupplier(editing ? { ...values, id: editing.id } : values);
     setSuppliers((prev) => {
       const exists = prev.find((entry) => entry.id === saved.id);
       return exists ? prev.map((entry) => (entry.id === saved.id ? saved : entry)) : [...prev, saved];
