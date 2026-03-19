@@ -6,7 +6,15 @@ export interface Column<T> {
   render: (row: T) => ReactNode;
 }
 
-export function DataTable<T>({ columns, data }: { columns: Column<T>[]; data: T[] }) {
+type DataTableProps<T> = {
+  columns: Column<T>[];
+  data?: T[] | null;
+  // Backwards-compat: some pages previously used `rows`.
+  rows?: T[] | null;
+};
+
+export function DataTable<T>({ columns, data, rows }: DataTableProps<T>) {
+  const safeRows = Array.isArray(data) ? data : Array.isArray(rows) ? rows : [];
   return (
     <Table>
       <TableHeader>
@@ -17,7 +25,7 @@ export function DataTable<T>({ columns, data }: { columns: Column<T>[]; data: T[
         </TableRow>
       </TableHeader>
       <TableBody>
-        {data.map((row, index) => (
+        {safeRows.map((row, index) => (
           <TableRow key={index}>
             {columns.map((column) => (
               <TableCell key={column.header}>{column.render(row)}</TableCell>

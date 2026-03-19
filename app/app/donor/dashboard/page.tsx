@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getBackendDonorDashboard } from "@/lib/backendApi";
+import { getBackendAiWeeklyReport, getBackendDonorDashboard } from "@/lib/backendApi";
 import { PageHeader } from "@/components/page-header";
 import { StatCards } from "@/components/stat-cards";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils";
+import { AiReport } from "@/lib/types";
 
 function TrendChartCard({
   title,
@@ -42,13 +43,21 @@ function TrendChartCard({
 
   const width = 420;
   const height = 140;
-  const paddingX = 18;
+  // Extra left padding to fit y-axis tick labels (currency strings can be long).
+  const paddingX = 62;
   const paddingTop = 24;
   const paddingBottom = 28;
   const max = Math.max(...values);
   const min = Math.min(...values);
   const range = Math.max(max - min, 1);
   const step = values.length > 1 ? (width - paddingX * 2) / (values.length - 1) : 0;
+
+  const yTicks = (() => {
+    const mid = (max + min) / 2;
+    const ticks = Array.from(new Set([max, mid, min]));
+    return ticks.sort((a, b) => b - a);
+  })();
+
   const points = values.map((value, index) => {
     const x = paddingX + index * step;
     const y = paddingTop + (height - paddingTop - paddingBottom) * (1 - (value - min) / range);
@@ -72,6 +81,25 @@ function TrendChartCard({
                 <stop offset="100%" stopColor={color.line} stopOpacity="0" />
               </linearGradient>
             </defs>
+            {yTicks.map((tick) => {
+              const y =
+                paddingTop + (height - paddingTop - paddingBottom) * (1 - (tick - min) / range);
+              return (
+                <g key={`tick-${tick}`}>
+                  <line
+                    x1={paddingX}
+                    x2={width - paddingX}
+                    y1={y}
+                    y2={y}
+                    stroke="#e2e8f0"
+                    strokeDasharray="4 4"
+                  />
+                  <text x={paddingX - 10} y={y + 3} textAnchor="end" fontSize="10" fill="#94a3b8">
+                    {formatter(tick)}
+                  </text>
+                </g>
+              );
+            })}
             <path d={areaPath} fill={`url(#${gradientId})`} />
             <path d={linePath} fill="none" stroke={color.line} strokeWidth="2.5" />
             {points.map((point, index) => (
@@ -101,9 +129,11 @@ function TrendChartCard({
 
 export default function DonorDashboardPage() {
   const [dashboard, setDashboard] = useState<null | Awaited<ReturnType<typeof getBackendDonorDashboard>>>(null);
+  const [weeklyReport, setWeeklyReport] = useState<AiReport | null>(null);
 
   useEffect(() => {
     getBackendDonorDashboard().then(setDashboard).catch(() => setDashboard(null));
+    getBackendAiWeeklyReport().then(setWeeklyReport).catch(() => setWeeklyReport(null));
   }, []);
 
   return (
@@ -173,6 +203,26 @@ export default function DonorDashboardPage() {
           </div>
         );
       })()}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Weekly executive summary</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {weeklyReport ? (
+            <>
+              <p className="text-xs text-slate-500">
+                {weeklyReport.window_start} to {weeklyReport.window_end}
+              </p>
+              <p className="text-sm leading-7 text-slate-700">{weeklyReport.summary}</p>
+            </>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-400">
+              Weekly executive summary is not available yet.
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -172,14 +172,27 @@ export default function AdminDashboardPage() {
 
           const width = 420;
           const height = 140;
-          const paddingX = 18;
+          // Extra left padding to fit y-axis tick labels.
+          const paddingX = 48;
           const paddingTop = 24;
           const paddingBottom = 28;
           const values = card.values;
           const max = Math.max(...values);
           const min = Math.min(...values);
           const range = Math.max(max - min, 1);
-          const step = (width - paddingX * 2) / (values.length - 1);
+          const step = values.length > 1 ? (width - paddingX * 2) / (values.length - 1) : 0;
+
+          const yTicks = (() => {
+            const mid = (max + min) / 2;
+            const ticks = Array.from(new Set([max, mid, min]));
+            return ticks.sort((a, b) => b - a);
+          })();
+
+          const formatTick = (value: number) => {
+            if (Number.isInteger(value)) return String(value);
+            return value.toFixed(2);
+          };
+
           const points = values.map((value, i) => {
             const x = paddingX + i * step;
             const y = paddingTop + (height - paddingTop - paddingBottom) * (1 - (value - min) / range);
@@ -217,6 +230,32 @@ export default function AdminDashboardPage() {
                         <stop offset="100%" stopColor={color.line} stopOpacity="0" />
                       </linearGradient>
                     </defs>
+                    {yTicks.map((tick) => {
+                      const y =
+                        paddingTop +
+                        (height - paddingTop - paddingBottom) * (1 - (tick - min) / range);
+                      return (
+                        <g key={`tick-${tick}`}>
+                          <line
+                            x1={paddingX}
+                            x2={width - paddingX}
+                            y1={y}
+                            y2={y}
+                            stroke="#e2e8f0"
+                            strokeDasharray="4 4"
+                          />
+                          <text
+                            x={paddingX - 10}
+                            y={y + 3}
+                            textAnchor="end"
+                            fontSize="10"
+                            fill="#94a3b8"
+                          >
+                            {formatTick(tick)}
+                          </text>
+                        </g>
+                      );
+                    })}
                     <path d={areaPath} fill={`url(#${gradientId})`} />
                     <path d={linePath} fill="none" stroke={color.line} strokeWidth="2.5" />
                     {points.map((point, i) => (

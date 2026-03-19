@@ -269,7 +269,11 @@ export interface SupervisorChildLookupItem {
 export interface AnomalyAlert {
   id: string;
   severity: "LOW" | "MEDIUM" | "HIGH";
+  type?: "MEAL_SPIKE" | "NO_SUBSCRIPTION_SPIKE" | "PAYMENTS_MEALS_MISMATCH";
+  title?: string;
   message: string;
+  metric_value?: number;
+  baseline_value?: number;
   created_at: string;
 }
 
@@ -278,6 +282,30 @@ export interface AiReport {
   title: string;
   summary: string;
   created_at: string;
+  window_start?: string;
+  window_end?: string;
+  highlights?: string[];
+}
+
+export interface AiForecastHistoryPoint {
+  date: string;
+  meals: number;
+}
+
+export interface AiForecastPoint {
+  date: string;
+  baseline: number;
+  predictedMeals: number;
+}
+
+export interface AiForecastSnapshot {
+  generatedAt: string;
+  scope: {
+    school_id?: string | null;
+    school_name: string;
+  };
+  history: AiForecastHistoryPoint[];
+  forecast: AiForecastPoint[];
 }
 
 export interface SchoolDashboardClassMeals {

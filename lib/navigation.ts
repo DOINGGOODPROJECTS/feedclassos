@@ -10,6 +10,7 @@ export const navByRole: Record<Role, NavItem[]> = {
     { label: "Dashboard", href: "/app/admin/dashboard" },
     { label: "Schools", href: "/app/admin/schools" },
     { label: "Supervisors", href: "/app/admin/supervisors" },
+    { label: "Donors", href: "/app/admin/donors" },
     { label: "Classes", href: "/app/admin/classes" },
     { label: "Children", href: "/app/admin/children" },
     { label: "Badges", href: "/app/admin/badges" },
@@ -30,6 +31,7 @@ export const navByRole: Record<Role, NavItem[]> = {
     { label: "Transactions", href: "/app/supervisor/transactions" },
     { label: "History", href: "/app/supervisor/history" },
     { label: "Problems", href: "/app/supervisor/problems" },
+    { label: "AI", href: "/app/supervisor/ai" },
   ],
   DONOR_READONLY: [{ label: "Dashboard", href: "/app/donor/dashboard" }],
 };

@@ -2,6 +2,7 @@ import {
   Child,
   ChildQr,
   ChildSubscription,
+  AiForecastSnapshot,
   ClassRoom,
   Guardian,
   LedgerTransaction,
@@ -14,6 +15,8 @@ import {
   SubscriptionPlan,
   SchoolDashboardSnapshot,
   DonorDashboardSnapshot,
+  AiReport,
+  AnomalyAlert,
   User,
   ValidationLog,
 } from "./types";
@@ -261,6 +264,44 @@ type BackendDonorDashboard = {
   }>;
 };
 
+type BackendAiForecast = {
+  generatedAt: string;
+  scope: {
+    school_id?: string | null;
+    school_name: string;
+  };
+  history: Array<{ date: string; meals: number }>;
+  forecast: Array<{ date: string; baseline: number; predictedMeals: number }>;
+};
+
+type BackendAiAlerts = {
+  generatedAt: string;
+  scope: {
+    school_id?: string | null;
+    school_name: string;
+  };
+  alerts: Array<{
+    id: string;
+    severity: "LOW" | "MEDIUM" | "HIGH";
+    type: "MEAL_SPIKE" | "NO_SUBSCRIPTION_SPIKE" | "PAYMENTS_MEALS_MISMATCH";
+    title: string;
+    message: string;
+    metric_value: number;
+    baseline_value: number;
+    created_at: string;
+  }>;
+};
+
+type BackendAiReport = {
+  id: string;
+  title: string;
+  summary: string;
+  created_at: string;
+  window_start: string;
+  window_end: string;
+  highlights: string[];
+};
+
 function getLocalMessagingSettings(): BackendMessagingSettings {
   if (typeof window === "undefined") {
     return {
@@ -462,7 +503,12 @@ function mapUser(entry: BackendUser): BackendUserRecord {
   return {
     id: entry.id,
     name: entry.name,
-    role: backendRole === "SUPERVISOR" ? "SCHOOL_ADMIN" : backendRole === "ADMIN" ? "ADMIN" : "SCHOOL_ADMIN",
+    role:
+      backendRole === "ADMIN"
+        ? "ADMIN"
+        : backendRole === "DONOR_READONLY"
+          ? "DONOR_READONLY"
+          : "SCHOOL_ADMIN",
     assigned_school_id: entry.assigned_school_id || entry.assignedSchoolId || undefined,
     email: entry.email,
     active: Boolean(entry.active),
@@ -676,6 +722,20 @@ export async function createBackendSupervisor(input: {
   return mapUser(payload.user);
 }
 
+export async function createBackendDonor(input: { name: string; email: string; password: string }) {
+  const payload = await fetchJson<{ user: BackendUser }>("/users", {
+    method: "POST",
+    body: JSON.stringify({
+      name: input.name,
+      email: input.email,
+      password: input.password,
+      role: "DONOR_READONLY",
+    }),
+  });
+
+  return mapUser(payload.user);
+}
+
 export async function updateBackendSupervisor(
   id: string,
   input: {
@@ -710,6 +770,28 @@ export async function updateBackendSupervisor(
   return updatedUser;
 }
 
+export async function updateBackendDonor(
+  id: string,
+  input: {
+    name?: string;
+    email?: string;
+    password?: string;
+    active?: boolean;
+  }
+) {
+  const payload = await fetchJson<{ user: BackendUser }>(`/users/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      name: input.name,
+      email: input.email,
+      password: input.password || undefined,
+      active: input.active,
+    }),
+  });
+
+  return mapUser(payload.user);
+}
+
 export async function deleteBackendSupervisor(id: string) {
   const encodedId = encodeURIComponent(id);
   try {
@@ -728,6 +810,10 @@ export async function deleteBackendSupervisor(id: string) {
     });
     return mapUser(payload.user);
   }
+}
+
+export async function deleteBackendDonor(id: string) {
+  return deleteBackendSupervisor(id);
 }
 
 export async function createBackendSchool(input: { name: string; location: string }) {
@@ -1166,6 +1252,30 @@ export async function getBackendSchoolDashboard(schoolId?: string, asOfDate?: st
 export async function getBackendDonorDashboard(): Promise<DonorDashboardSnapshot> {
   const payload = await fetchJson<{ dashboard: BackendDonorDashboard }>("/dash/donor");
   return payload.dashboard;
+}
+
+export async function getBackendAiForecast(schoolId?: string): Promise<AiForecastSnapshot> {
+  const params = new URLSearchParams();
+  if (schoolId) params.set("school_id", schoolId);
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const payload = await fetchJson<{ forecast: BackendAiForecast }>(`/ai/forecast${query}`);
+  return payload.forecast;
+}
+
+export async function getBackendAiAlerts(schoolId?: string): Promise<AnomalyAlert[]> {
+  const params = new URLSearchParams();
+  if (schoolId) params.set("school_id", schoolId);
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const payload = await fetchJson<BackendAiAlerts>(`/ai/alerts${query}`);
+  return payload.alerts;
+}
+
+export async function getBackendAiWeeklyReport(schoolId?: string): Promise<AiReport> {
+  const params = new URLSearchParams();
+  if (schoolId) params.set("school_id", schoolId);
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const payload = await fetchJson<{ report: BackendAiReport }>(`/ai/reports/weekly${query}`);
+  return payload.report;
 }
 
 export async function getBackendSubscriptionPlans() {
